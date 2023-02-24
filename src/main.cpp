@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <eisgenerator/model.h>
 #include <eisgenerator/log.h>
+#include <eisgenerator/translators.h>
 #include <thread>
 #include <list>
 #include <mutex>
@@ -12,6 +13,9 @@
 #include "options.h"
 #include "filterdata.h"
 #include "tokenize.h"
+#include "randomgen.h"
+
+std::mutex printMutex;
 
 static bool checkDir(const std::filesystem::path& outDir)
 {
@@ -30,6 +34,7 @@ struct FileInfo
 {
 	std::string model;
 	std::filesystem::path path;
+	std::string origin;
 	size_t indexInModel;
 	int classId;
 };
@@ -44,7 +49,7 @@ struct Spectrum
 template <typename type>
 struct ThreadList
 {
-	std::list<type> list;
+	std::vector<type> list;
 	std::mutex mutex;
 };
 
@@ -87,6 +92,7 @@ static std::vector<FileInfo> getListOfFiles(const std::filesystem::path dir, std
 			FileInfo info;
 			info.model = dropSeriesResistance(tokens[1]);
 			info.path = dirent.path();
+			info.origin = tokens[0];
 			Log(Log::DEBUG)<<"Found "<<info.path;
 			out.push_back(info);
 		}
@@ -147,19 +153,35 @@ static std::vector<std::pair<std::string, size_t>> discoverModels(std::vector<Fi
 	return models;
 }
 
-static bool save(const FileInfo& info, const std::vector<eis::DataPoint>& data, const std::filesystem::path& outDir)
+static bool save(const Spectrum& spectrum, const std::filesystem::path& outDir)
 {
-	bool ret =saveToDisk(data, outDir/info.path.filename(), info.model + ", " + std::to_string(info.classId) + ", " + std::to_string(info.indexInModel));
+	std::string filename(spectrum.info.origin);
+	filename.push_back('_');
+	filename.append(spectrum.info.model);
+	filename.push_back('_');
+	filename.append(std::to_string(spectrum.info.indexInModel));
+	filename.append(".csv");
+	eis::EisSpectra saveSpectra(spectrum.data, spectrum.info.model,
+								std::to_string(spectrum.info.classId) + ", " + std::to_string(spectrum.info.indexInModel));
+	bool ret = eis::saveToDisk(saveSpectra, outDir/filename);
 	if(!ret)
-		Log(Log::ERROR)<<"Could not save "<<outDir/info.path.filename()<<" to disk\n";
+		Log(Log::ERROR)<<"Could not save "<<outDir/filename<<" to disk\n";
 	return ret;
 }
 
 static std::vector<eis::DataPoint> load(const FileInfo& info)
 {
-	std::vector<eis::DataPoint> data = eis::loadFromDisk(info.path).first;
-	filterData(data, 100);
-	return data;
+	eis::EisSpectra data = eis::loadFromDisk(info.path);
+	filterData(data.data, 100);
+	std::string purgedModel = data.model;
+	eis::purgeEisParamBrackets(purgedModel);
+	purgedModel = dropSeriesResistance(purgedModel);
+	if(purgedModel != info.model)
+	{
+		std::scoped_lock lock(printMutex);
+		Log(Log::ERROR)<<"The file name of  "<<info.path<<" suggests its model is "<<info.model<<" but it really is "<<purgedModel;
+	}
+	return data.data;
 }
 
 static double getMeanNorm(const std::vector<eis::DataPoint>& data)
@@ -176,6 +198,14 @@ static void printModels(const std::vector<std::pair<std::string, size_t>>& model
 	Log(Log::INFO)<<"Models:";
 	for(const std::pair<std::string, size_t>& model : models)
 		Log(Log::INFO)<<model.first<<": "<<model.second;
+}
+
+static void printModels(const std::vector<std::vector<std::unique_ptr<Spectrum>>>& spectra)
+{
+	std::vector<std::pair<std::string, size_t>> models;
+	for(const std::vector<std::unique_ptr<Spectrum>>& vector : spectra)
+		models.push_back(std::pair<std::string, size_t>(vector.back()->info.model, vector.size()));
+	printModels(models);
 }
 
 static void dropFilesWithDropModels(const std::vector<std::string>& dropModels, std::vector<FileInfo>& files)
@@ -215,19 +245,19 @@ static std::vector<std::string> detemineDropModels(const std::vector<std::pair<s
 	return dropModels;
 }
 
-static std::vector<std::list<std::unique_ptr<Spectrum>>> splitByModel(const std::list<std::unique_ptr<Spectrum>>& list)
+static std::vector<std::vector<std::unique_ptr<Spectrum>>> splitByModel(std::vector<std::unique_ptr<Spectrum>>& list)
 {
 	std::vector<size_t> classIds;
-	std::vector<std::list<std::unique_ptr<Spectrum>>> datasets;
+	std::vector<std::vector<std::unique_ptr<Spectrum>>> datasets;
 
-	for(const std::unique_ptr<Spectrum>& spectrum : list)
+	for(std::unique_ptr<Spectrum>& spectrum : list)
 	{
 		auto search = std::find(classIds.begin(), classIds.end(), spectrum->info.classId);
-		if(search != classIds.end())
+		if(search == classIds.end())
 		{
 			classIds.push_back(spectrum->info.classId);
-			datasets.push_back(std::list<std::unique_ptr<Spectrum>>());
-			//datasets.back().push_back(std::move(spectrum));
+			datasets.push_back(std::vector<std::unique_ptr<Spectrum>>());
+			datasets.back().push_back(std::move(spectrum));
 		}
 		else
 		{
@@ -237,35 +267,61 @@ static std::vector<std::list<std::unique_ptr<Spectrum>>> splitByModel(const std:
 	return datasets;
 }
 
-void ammendWithGeneratedSpectra(std::list<std::unique_ptr<Spectrum>>* list, size_t targetSize)
+static std::vector<std::unique_ptr<Spectrum>> reasmbleSplitDataset(std::vector<std::vector<std::unique_ptr<Spectrum>>>& list)
 {
-	Log(Log::INFO, false)<<list->front()->info.model;
-	if(list->size() > targetSize)
+	std::vector<std::unique_ptr<Spectrum>> out;
+
+	for(std::vector<std::unique_ptr<Spectrum>>& vector : list)
 	{
-		Log(Log::INFO)<<" already has sufficant examples";
+		for(std::unique_ptr<Spectrum>& spectrum : vector)
+			out.push_back(std::move(spectrum));
+	}
+	return out;
+}
+
+void ammendWithGeneratedSpectra(std::vector<std::unique_ptr<Spectrum>>* list, size_t targetSize)
+{
+	if(list->size() > 2*targetSize/3)
+	{
+		std::scoped_lock lock(printMutex);
+		Log(Log::INFO)<<list->front()->info.model<<" already has sufficant examples";
 		return;
 	}
 
 	size_t needed = targetSize-list->size();
-	Log(Log::INFO)<<" will be ammended with "<<needed<<" generated examples";
+	printMutex.lock();
+	Log(Log::INFO)<<list->front()->info.model<<" will be ammended with "<<needed<<" generated examples";
+	printMutex.unlock();
 
 	eis::Model model(list->front()->info.model, 10, true);
-	eis::Range omegaRange(1, 1e6, true);
-	const double step = 0.35;
+	model.setParamSweepCountClosestTotal(1000000);
+	eis::Range omegaRange(1, 1e6, 30, true);
+	const double step = 0.01;
 	std::vector<size_t> indicies = model.getRecommendedParamIndices(omegaRange, step, true);
 	if(indicies.empty())
 	{
+		std::scoped_lock lock(printMutex);
 		Log(Log::WARN)<<list->front()->info.model<<": can not generate examples for this model";
 		return;
 	}
+	size_t previous = indicies.size();
 	for(size_t i = 2; i < 32 && indicies.size() < needed; i*=2)
 	{
+		printMutex.lock();
 		Log(Log::INFO)<<list->front()->info.model<<": found indicies for only "<<indicies.size()<<" spectra trying again with a step of "<<step/i;
+		printMutex.unlock();
 		indicies = model.getRecommendedParamIndices(omegaRange, step/i, true);
+		if(previous == indicies.size())
+			break;
+		previous = indicies.size();
 	}
 
 	if(indicies.size() < needed)
-		Log(Log::WARN)<<list->front()->info.model<<": can not generate sufficant examples for this model, will only add "<<indicies.size();
+	{
+		std::scoped_lock lock(printMutex);
+		Log(Log::WARN)<<list->front()->info.model<<": can not generate sufficant ("<<needed
+			<<") examples for this model, will only add "<<indicies.size();
+	}
 
 	size_t stride = indicies.size()/needed;
 	if(stride == 0)
@@ -278,6 +334,8 @@ void ammendWithGeneratedSpectra(std::list<std::unique_ptr<Spectrum>>* list, size
 		spectrum->meanNorm = getMeanNorm(spectrum->data);
 		spectrum->info = list->back()->info;
 		++spectrum->info.indexInModel;
+		std::string filename("gen_");
+		spectrum->info.path = list->back()->info.path.parent_path()/filename;
 		list->push_back(std::move(spectrum));
 	}
 }
@@ -303,7 +361,7 @@ static void loadThreadFunc(std::vector<FileInfo>::iterator begin, std::vector<Fi
 	} while(++begin != end);
 }
 
-void ammendThreadFunc(std::list<std::unique_ptr<Spectrum>>* dataset, size_t totalCount, size_t totalModels)
+void ammendThreadFunc(std::vector<std::unique_ptr<Spectrum>>* dataset, size_t totalCount, size_t totalModels)
 {
 	size_t expectedCount = totalCount/totalModels;
 	ammendWithGeneratedSpectra(dataset, expectedCount);
@@ -340,6 +398,15 @@ int main(int argc, char** argv)
 	bool ret = checkDir(config.outDir);
 	if(!ret)
 		return 3;
+	ret = checkDir(config.outDir/"train");
+	if(!ret)
+		return 3;
+	if(config.testPercent > 0)
+	{
+		ret = checkDir(config.outDir/"test");
+		if(!ret)
+			return 3;
+	}
 
 	ThreadList<std::unique_ptr<Spectrum>> list;
 	std::vector<std::thread> threads;
@@ -352,10 +419,33 @@ int main(int argc, char** argv)
 	threads.clear();
 	Log(Log::INFO)<<"Loaded Count: "<<list.list.size();
 
-	std::vector<std::list<std::unique_ptr<Spectrum>>> datasets = splitByModel(list.list);
-	for(size_t i = 0; i < datasets.size(); ++i)
+	std::vector<std::vector<std::unique_ptr<Spectrum>>> datasets = splitByModel(list.list);
+
+	if(!config.noBalance)
 	{
-		threads.push_back(std::thread(ammendThreadFunc, &datasets[i], list.list.size(), datasets.size()));
+		for(size_t i = 0; i < datasets.size(); ++i)
+			threads.push_back(std::thread(ammendThreadFunc, &datasets[i], list.list.size(), datasets.size()));
+
+		for(std::thread& thread : threads)
+			thread.join();
+	}
+
+	printModels(datasets);
+	list.list = reasmbleSplitDataset(datasets);
+	Log(Log::INFO)<<"Will save: "<<list.list.size();
+
+	for(const std::unique_ptr<Spectrum>& spectrum : list.list)
+	{
+		bool ret;
+		if(config.testPercent > rd::rand(100))
+			ret = save(*spectrum, config.outDir/"test");
+		else
+			ret = save(*spectrum, config.outDir/"train");
+		if(!ret)
+		{
+			Log(Log::ERROR)<<"could not save "<<spectrum->info.path;
+			return 8;
+		}
 	}
 
 	return 0;

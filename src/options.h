@@ -17,7 +17,8 @@ static struct argp_option options[] =
   {"quiet",			'q', 0,			0,	"Show only errors" },
   {"dataset", 		'd', "[PATH]",	0,	"dataset to use" },
   {"out-dir",		'o', "[PATH]",	0,	"directory where to export cleaned dataset"},
-  {"dry-run",		'r', "[PATH]",	0,	"do not export or modify any data"},
+  {"test-percent",	't', "[NUMBER]",0,	"test dataset percentage"},
+  {"no-balance",	'n', 0,			0,	"dont balance data with generated examples"},
   { 0 }
 };
 
@@ -25,7 +26,8 @@ struct Config
 {
 	std::filesystem::path datasetPath;
 	std::filesystem::path outDir = "./out";
-	bool dryRun = false;
+	bool noBalance = false;
+	int testPercent = 0;
 };
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
@@ -48,8 +50,16 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		case 'o':
 			config->outDir = arg;
 			break;
-		case 'r':
-			config->dryRun = true;
+		case 'n':
+			config->noBalance = true;
+			break;
+		case 't':
+			config->testPercent = std::stoi(std::string(arg));
+			if(config->testPercent < 0 || config->testPercent > 100)
+			{
+				std::cout<<arg<<" passed for argument -"<<key<<" is not a valid percentage.";
+				return ARGP_KEY_ERROR;
+			}
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;

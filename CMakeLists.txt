@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.0)
 
 project(conditioneisdirdataset)
 
-set(SRC_FILES src/main.cpp src/log.cpp src/tokenize.cpp)
+set(SRC_FILES src/main.cpp src/log.cpp src/tokenize.cpp src/randomgen.cpp)
 
 add_executable(${PROJECT_NAME} ${SRC_FILES})
 target_link_libraries( ${PROJECT_NAME} -leisgenerator)
