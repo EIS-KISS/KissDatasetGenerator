@@ -92,12 +92,16 @@ int main(int argc, char** argv)
 		++classCounts[spectrum.ex.label];
 		bool ret;
 		if(rd::rand(100) < config.testPercent ||
-			testCounts[spectrum.ex.label]/static_cast<double>(classCounts[])*100.0 < config.testPercent/2 ||
+			testCounts[spectrum.ex.label]/static_cast<double>(classCounts[spectrum.ex.label])*100.0 < config.testPercent/2 ||
 			testCounts[spectrum.ex.label] == 0)
+		{
 			ret = save(spectrum, config.outDir/"test");
-			++testCounts[spectrum.ex.label]
+			++testCounts[spectrum.ex.label];
+		}
 		else
+		{
 			ret = save(spectrum, config.outDir/"train");
+		}
 		if(!ret)
 			break;
 	}
