@@ -16,9 +16,9 @@ static struct argp_option options[] =
   {"verbose",		'v', 0,			0,	"Show debug messages" },
   {"quiet",			'q', 0,			0,	"Show only errors" },
   {"dataset", 		'd', "[PATH]",	0,	"dataset to use" },
-  {"out-dir",		'o', "[PATH]",	0,	"directory where to export cleaned dataset"},
+  {"out-dir",		'o', "[PATH]",	0,	"directory where to export dataset"},
   {"test-percent",	't', "[NUMBER]",0,	"test dataset percentage"},
-  {"no-balance",	'n', 0,			0,	"dont balance data with generated examples"},
+  {"size",			's', "[NUMBER]",0,	"size the dataset should have"},
   { 0 }
 };
 
@@ -26,7 +26,7 @@ struct Config
 {
 	std::filesystem::path datasetPath;
 	std::filesystem::path outDir = "./out";
-	bool noBalance = false;
+	size_t desiredSize = 100000;
 	int testPercent = 0;
 };
 
@@ -50,8 +50,8 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		case 'o':
 			config->outDir = arg;
 			break;
-		case 'n':
-			config->noBalance = true;
+		case 's':
+			config->desiredSize = std::stoi(std::string(arg));
 			break;
 		case 't':
 			config->testPercent = std::stoi(std::string(arg));
