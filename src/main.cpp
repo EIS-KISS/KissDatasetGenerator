@@ -8,6 +8,7 @@
 #include <mutex>
 #include <cassert>
 #include <memory>
+#include <algorithm>
 
 #include "log.h"
 #include "options.h"
@@ -122,9 +123,10 @@ int main(int argc, char** argv)
 	std::vector<size_t> testCounts(dataset.classesCount(), 0);
 
 	std::vector<std::thread> threads;
-	size_t countPerThread = dataset.size()/std::thread::hardware_concurrency();
+	size_t threadCount = std::min(std::thread::hardware_concurrency(), 8U);
+	size_t countPerThread = dataset.size()/threadCount;
 	size_t i = 0;
-	for(; i < std::thread::hardware_concurrency()-1; ++i)
+	for(; i < threadCount-1; ++i)
 		threads.push_back(std::thread(threadFunc, dataset, i*countPerThread, (i+1)*countPerThread,
 									  config.testPercent, &classCounts, &testCounts, &countsMutex, config.outDir));
 	threads.push_back(std::thread(threadFunc, dataset, i*countPerThread, dataset.size(),
