@@ -52,6 +52,42 @@ static bool save(const Spectrum& spectrum, const std::filesystem::path& outDir)
 	return ret;
 }
 
+void threadFunc(EisGeneratorDataset dataset, size_t begin, size_t end, int testPercent,
+				std::vector<size_t>* classCounts, std::vector<size_t>* testCounts, std::mutex* countsMutex,
+				const std::filesystem::path outDir)
+{
+	countsMutex->lock();
+	Log(Log::INFO)<<"Thread doing "<<begin<<" to "<<end-1;
+	countsMutex->unlock();
+	for(size_t i = begin; i < end; ++i)
+	{
+		Spectrum spectrum;
+		spectrum.ex = dataset.get(i);
+		spectrum.model = dataset.modelStringForClass(spectrum.ex.label);
+		spectrum.indexInModel = classCounts->at(spectrum.ex.label);
+
+		bool test = false;
+
+		{
+			std::scoped_lock lock(*countsMutex);
+			++classCounts->at(spectrum.ex.label);
+			if(testPercent > 0 &&
+				(rd::rand(100) < testPercent ||
+				testCounts->at(spectrum.ex.label)/static_cast<double>(classCounts->at(spectrum.ex.label))*100.0 < testPercent/2 ||
+				testCounts->at(spectrum.ex.label) == 0))
+			{
+				++testCounts->at(spectrum.ex.label);
+				test = true;
+			}
+		}
+
+		if(test)
+			save(spectrum, outDir/"test");
+		else
+			save(spectrum, outDir/"train");
+	}
+}
+
 int main(int argc, char** argv)
 {
 	Log::level = Log::INFO;
@@ -81,31 +117,21 @@ int main(int argc, char** argv)
 	EisGeneratorDataset dataset(config.datasetPath, config.desiredSize, 100, 0, true, false);
 	Log(Log::INFO)<<"Dataset size: "<<dataset.size();
 
+	std::mutex countsMutex;
 	std::vector<size_t> classCounts(dataset.classesCount(), 0);
 	std::vector<size_t> testCounts(dataset.classesCount(), 0);
-	for(size_t i = 0; i < dataset.size(); ++i)
-	{
-		Spectrum spectrum;
-		spectrum.ex = dataset.get(i);
-		spectrum.model = dataset.modelStringForClass(spectrum.ex.label);
-		spectrum.indexInModel = classCounts[spectrum.ex.label];
-		++classCounts[spectrum.ex.label];
-		bool ret;
-		if(config.testPercent > 0 &&
-			(rd::rand(100) < config.testPercent ||
-			testCounts[spectrum.ex.label]/static_cast<double>(classCounts[spectrum.ex.label])*100.0 < config.testPercent/2 ||
-			testCounts[spectrum.ex.label] == 0))
-		{
-			ret = save(spectrum, config.outDir/"test");
-			++testCounts[spectrum.ex.label];
-		}
-		else
-		{
-			ret = save(spectrum, config.outDir/"train");
-		}
-		if(!ret)
-			break;
-	}
+
+	std::vector<std::thread> threads;
+	size_t countPerThread = dataset.size()/std::thread::hardware_concurrency();
+	size_t i = 0;
+	for(; i < std::thread::hardware_concurrency()-1; ++i)
+		threads.push_back(std::thread(threadFunc, dataset, i*countPerThread, (i+1)*countPerThread,
+									  config.testPercent, &classCounts, &testCounts, &countsMutex, config.outDir));
+	threads.push_back(std::thread(threadFunc, dataset, i*countPerThread, dataset.size(),
+									  config.testPercent, &classCounts, &testCounts, &countsMutex, config.outDir));
+
+	for(std::thread& thread : threads)
+		thread.join();
 
 	return 0;
 }
