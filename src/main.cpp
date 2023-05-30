@@ -101,7 +101,7 @@ void exportDataset(Dataset& dataset, const Config& config)
 	std::vector<size_t> testCounts(dataset.classesCount(), 0);
 
 	std::vector<std::thread> threads;
-	size_t threadCount = std::min(std::thread::hardware_concurrency(), 8U);
+	size_t threadCount = std::thread::hardware_concurrency();
 	size_t countPerThread = dataset.size()/threadCount;
 	size_t i = 0;
 
