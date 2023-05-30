@@ -156,7 +156,7 @@ int main(int argc, char** argv)
 	}
 	else if(config.purpose == PURPOSE_REGRESSION)
 	{
-		ParameterRegressionDataset dataset(config.datasetPath.string(), 50, 0, true);
+		ParameterRegressionDataset dataset(config.datasetPath.string(), config.desiredSize, 50, 0, true);
 		exportDataset<ParameterRegressionDataset>(dataset, config);
 	}
 

@@ -23,7 +23,7 @@ private:
 	virtual eis::EisSpectra getImpl(size_t index) override;
 
 public:
-	explicit ParameterRegressionDataset(const std::string& model, int64_t outputSize = 100, double noiseI = 0, bool drtI = true);
+	explicit ParameterRegressionDataset(const std::string& model, int64_t desiredSize, int64_t outputSize = 100, double noiseI = 0, bool drtI = true);
 	ParameterRegressionDataset(const ParameterRegressionDataset& in) = default;
 
 	void setOmegaRange(eis::Range range);

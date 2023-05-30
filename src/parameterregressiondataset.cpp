@@ -6,11 +6,11 @@
 #include "parameterregressiondataset.h"
 #include "log.h"
 
-ParameterRegressionDataset::ParameterRegressionDataset(const std::string& modelStr, int64_t outputSize, double noiseI, bool drtI):
+ParameterRegressionDataset::ParameterRegressionDataset(const std::string& modelStr, int64_t desiredSize, int64_t outputSize, double noiseI, bool drtI):
 model(modelStr), omega(10, 1e6, drtI ? outputSize : outputSize/2, true), noise(noiseI), drt(drtI)
 {
 	sweepCount = model.getRequiredStepsForSweeps();
-	model.setParamSweepCountClosestTotal(1e6);
+	model.setParamSweepCountClosestTotal(desiredSize);
 	sweepCount = model.getRequiredStepsForSweeps();
 	parameterCount = model.getParameterCount();
 }
