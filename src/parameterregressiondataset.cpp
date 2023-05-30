@@ -9,6 +9,7 @@
 ParameterRegressionDataset::ParameterRegressionDataset(const std::string& modelStr, int64_t desiredSize, int64_t outputSize, double noiseI, bool drtI):
 model(modelStr), omega(10, 1e6, drtI ? outputSize : outputSize/2, true), noise(noiseI), drt(drtI)
 {
+	model.compile();
 	sweepCount = model.getRequiredStepsForSweeps();
 	model.setParamSweepCountClosestTotal(desiredSize);
 	sweepCount = model.getRequiredStepsForSweeps();
