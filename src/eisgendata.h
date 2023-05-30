@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <eisgenerator/eistype.h>
 #include <vector>
 #include <eisgenerator/model.h>
 #include <string>
@@ -40,6 +41,7 @@ private:
 	std::pair<size_t, size_t> getModelAndOffsetForIndex(size_t index) const;
 	void addVectorOfModels(const std::vector<std::string>& modelStrs, int64_t desiredSize, bool inductivity);
 	size_t trueSize() const;
+	virtual eis::EisSpectra getImpl(size_t index) override;
 
 public:
 	explicit EisGeneratorDataset(int64_t outputSize = 100, double noiseI = 0, bool repetition = false);
@@ -59,7 +61,6 @@ public:
 	const eis::Range& getOmegaRange(){return omega;}
 	size_t singleSweepCount();
 
-	virtual Example get(size_t index) override;
 	virtual std::vector<int64_t> classCounts() override;
 	virtual size_t classesCount() const override;
 	virtual size_t classForIndex(size_t index) override;

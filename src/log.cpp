@@ -18,9 +18,11 @@
 */
 
 #include "log.h"
+#include <mutex>
 
 Log::Log(Level type, bool endlineI): endline(endlineI)
 {
+	mutex.lock();
 	msglevel = type;
 	if(headers)
 	{
@@ -35,6 +37,7 @@ Log::~Log()
 		std::cout<<'\n';
 	}
 	opened = false;
+	mutex.unlock();
 }
 
 
@@ -61,3 +64,4 @@ std::string Log::getLabel(Level level)
 
 bool Log::headers = false;
 Log::Level Log::level = WARN;
+std::mutex Log::mutex;

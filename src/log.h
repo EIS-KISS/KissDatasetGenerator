@@ -20,6 +20,7 @@
 #pragma once
 #include <iostream>
 #include <string>
+#include <mutex>
 
 class Log
 {
@@ -37,6 +38,8 @@ private:
 	bool opened = false;
 	Level msglevel = DEBUG;
 	bool endline = true;
+
+	static std::mutex mutex;
 
 	std::string getLabel(Level level);
 

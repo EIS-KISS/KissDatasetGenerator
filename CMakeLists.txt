@@ -1,12 +1,16 @@
 cmake_minimum_required(VERSION 3.0)
 
 project(eisgendirdataset)
+set (CMAKE_CXX_STANDARD 20)
 
-set(SRC_FILES src/main.cpp src/log.cpp src/tokenize.cpp src/randomgen.cpp src/hash.cpp src/eisgendata.cpp)
+set(SRC_FILES src/main.cpp src/log.cpp src/tokenize.cpp src/randomgen.cpp src/hash.cpp src/eisgendata.cpp src/eisdataset.cpp src/parameterregressiondataset.cpp)
+
+find_package(PkgConfig REQUIRED)
+pkg_search_module(DRT REQUIRED libeisdrt)
 
 add_executable(${PROJECT_NAME} ${SRC_FILES})
-target_link_libraries( ${PROJECT_NAME} -lpthread -leisgenerator)
-target_include_directories(${PROJECT_NAME} PRIVATE)
+target_link_libraries( ${PROJECT_NAME} ${DRT_LIBRARIES} -lpthread -leisgenerator)
+target_include_directories(${PROJECT_NAME} ${DRT_INCLUDE_DIRS} PRIVATE)
 target_compile_options(${PROJECT_NAME} PRIVATE
 	"-Wall"
 	"-Wno-reorder"

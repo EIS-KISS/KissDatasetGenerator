@@ -90,6 +90,7 @@ void EisGeneratorDataset::addVectorOfModels(const std::vector<std::string>& mode
 			Log(Log::WARN)<<__func__<<" invalid model string "<<workModelStr;
 			continue;
 		}
+		model->compile();
 		if(model->getRequiredStepsForSweeps() > 1)
 			model->setParamSweepCountClosestTotal(sizePerModel);
 		Log(Log::DEBUG)<<"got "<<model->getRequiredStepsForSweeps();
@@ -165,7 +166,7 @@ std::pair<size_t, size_t> EisGeneratorDataset::getModelAndOffsetForIndex(size_t 
 	return std::pair<size_t, size_t>(model, index);
 }
 
-Example EisGeneratorDataset::get(size_t index)
+eis::EisSpectra EisGeneratorDataset::getImpl(size_t index)
 {
 	index = index % trueSize();
 	std::pair<size_t, size_t> modelAndOffset = getModelAndOffsetForIndex(index);
@@ -198,7 +199,7 @@ Example EisGeneratorDataset::get(size_t index)
 	if(noise > 0)
 		eis::noise(data, noise, false);
 
-	return Example(data, classForIndex(index));
+	return eis::EisSpectra(data, "", "", classForIndex(index), classesCount());
 }
 
 size_t EisGeneratorDataset::classesCount() const

@@ -6,30 +6,13 @@
 
 #include "hash.h"
 
-class Example
-{
-public:
-	std::vector<eis::DataPoint> data;
-	size_t label;
-
-	Example(const std::vector<eis::DataPoint>& dataIn, size_t labelIn):
-	data(dataIn), label(labelIn)
-	{
-
-	}
-
-	Example(){}
-
-	uint64_t hash() const
-	{
-		return murmurHash64(data.data(), data.size(), 0);
-	}
-};
-
 class EisDataset
 {
+private:
+	virtual eis::EisSpectra getImpl(size_t index) = 0;
+
 public:
-	virtual Example get(size_t index) = 0;
+	eis::EisSpectra get(size_t index);
 	virtual size_t classesCount() const = 0;
 	virtual size_t size() const = 0;
 	virtual size_t classForIndex(size_t index) = 0;
