@@ -81,11 +81,11 @@ void threadFunc(EisDataset* dataset, size_t begin, size_t end, int testPercent,
 		else
 			save(spectrum, outDir/"train");
 
-		int percent = ((i-begin)*100)/(end-begin);
-		if(percent != loggedFor)
+		int permill = ((i-begin)*1000)/(end-begin);
+		if(permill != loggedFor)
 		{
-			loggedFor = percent;
-			Log(Log::INFO)<<begin<<" -> "<<end<<' '<<percent<<'%';
+			loggedFor = permill;
+			Log(Log::INFO)<<begin<<" -> "<<end<<' '<<static_cast<double>(permill)/10.0<<'%';
 		}
 	}
 	delete dataset;
@@ -151,12 +151,12 @@ int main(int argc, char** argv)
 
 	if(config.purpose == PURPOSE_CLASSFIY)
 	{
-		EisGeneratorDataset dataset(config.datasetPath, config.desiredSize, 100, 0, true, false);
+		EisGeneratorDataset dataset(config.datasetPath, config.desiredSize, 50, 0, true, false);
 		exportDataset<EisGeneratorDataset>(dataset, config);
 	}
 	else if(config.purpose == PURPOSE_REGRESSION)
 	{
-		ParameterRegressionDataset dataset(config.datasetPath.string(), 100, 0, true);
+		ParameterRegressionDataset dataset(config.datasetPath.string(), 50, 0, true);
 		exportDataset<ParameterRegressionDataset>(dataset, config);
 	}
 
