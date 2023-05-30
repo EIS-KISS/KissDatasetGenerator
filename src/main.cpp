@@ -53,6 +53,7 @@ void threadFunc(EisDataset* dataset, size_t begin, size_t end, int testPercent,
 	countsMutex->lock();
 	Log(Log::INFO)<<"Thread doing "<<begin<<" to "<<end-1;
 	countsMutex->unlock();
+	int loggedFor = 0;
 	for(size_t i = begin; i < end; ++i)
 	{
 		eis::EisSpectra spectrum = dataset->get(i);
@@ -79,6 +80,13 @@ void threadFunc(EisDataset* dataset, size_t begin, size_t end, int testPercent,
 			save(spectrum, outDir/"test");
 		else
 			save(spectrum, outDir/"train");
+
+		int percent = ((i-begin)*100)/(end-begin);
+		if(percent != loggedFor)
+		{
+			loggedFor = percent;
+			Log(Log::INFO)<<begin<<" -> "<<end<<' '<<percent<<'%';
+		}
 	}
 	delete dataset;
 }
