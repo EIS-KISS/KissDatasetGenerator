@@ -13,11 +13,10 @@
 
 #include "log.h"
 #include "options.h"
-#include "filterdata.h"
 #include "parameterregressiondataset.h"
-#include "tokenize.h"
 #include "randomgen.h"
 #include "eisgendata.h"
+#include "microtar.h"
 
 static bool checkDir(const std::filesystem::path& outDir)
 {
@@ -32,7 +31,7 @@ static bool checkDir(const std::filesystem::path& outDir)
 	return true;
 }
 
-static bool save(const eis::EisSpectra& spectrum, const std::filesystem::path& outDir)
+static bool save(const eis::EisSpectra& spectrum, const std::filesystem::path& outDir, std::mutex& saveMutex, mtar_t* tar = nullptr)
 {
 	std::string filename("generated");
 	filename.push_back('_');
@@ -40,15 +39,31 @@ static bool save(const eis::EisSpectra& spectrum, const std::filesystem::path& o
 	filename.push_back('_');
 	filename.append(spectrum.header);
 	filename.append(".csv");
-	bool ret = eis::saveToDisk(spectrum, outDir/filename);
-	if(!ret)
-		Log(Log::ERROR)<<"Could not save "<<outDir/filename<<" to disk\n";
+
+	bool ret = true;
+
+	if(!tar)
+	{
+		ret = spectrum.saveToDisk(outDir/filename);
+		if(!ret)
+			Log(Log::ERROR)<<"Could not save "<<outDir/filename<<" to disk\n";
+	}
+	else
+	{
+		std::stringstream ss;
+		spectrum.saveToStream(ss);
+
+		std::scoped_lock<std::mutex> lk(saveMutex);
+		mtar_write_file_header(tar, (outDir/filename).c_str(), ss.str().size());
+		mtar_write_data(tar, ss.str().c_str(), ss.str().size());
+	}
+
 	return ret;
 }
 
 void threadFunc(EisDataset* dataset, size_t begin, size_t end, int testPercent,
 				std::vector<size_t>* classCounts, std::vector<size_t>* testCounts, std::mutex* countsMutex,
-				const std::filesystem::path outDir)
+				const std::filesystem::path outDir, std::mutex* saveMutex, mtar_t* tar)
 {
 	countsMutex->lock();
 	Log(Log::INFO)<<"Thread doing "<<begin<<" to "<<end-1;
@@ -82,9 +97,9 @@ void threadFunc(EisDataset* dataset, size_t begin, size_t end, int testPercent,
 		}
 
 		if(test)
-			save(spectrum, outDir/"test");
+			save(spectrum, outDir/"test", *saveMutex, tar);
 		else
-			save(spectrum, outDir/"train");
+			save(spectrum, outDir/"train", *saveMutex, tar);
 
 		int permill = ((i-begin)*1000)/(end-begin);
 		if(permill != loggedFor)
@@ -97,25 +112,27 @@ void threadFunc(EisDataset* dataset, size_t begin, size_t end, int testPercent,
 }
 
 template <typename Dataset>
-void exportDataset(Dataset& dataset, const Config& config)
+void exportDataset(Dataset& dataset, const Config& config, mtar_t* tar)
 {
 	Log(Log::INFO)<<"Dataset size: "<<dataset.size()<<" "<<dataset.modelStringForClass(0);
 
+	std::mutex saveMutex;
 	std::mutex countsMutex;
+
 	std::vector<size_t> classCounts(dataset.classesCount(), 0);
 	std::vector<size_t> testCounts(dataset.classesCount(), 0);
 
 	std::vector<std::thread> threads;
-	size_t threadCount = std::thread::hardware_concurrency();
+	size_t threadCount = std::thread::hardware_concurrency()*1.5;
 	size_t countPerThread = dataset.size()/threadCount;
 	size_t i = 0;
 
 	Log(Log::INFO)<<"Spawing "<<threadCount<<" treads";
 	for(; i < threadCount-1; ++i)
 		threads.push_back(std::thread(threadFunc, new Dataset(dataset), i*countPerThread, (i+1)*countPerThread,
-									  config.testPercent, &classCounts, &testCounts, &countsMutex, config.outDir));
+									  config.testPercent, &classCounts, &testCounts, &countsMutex, config.outDir, &saveMutex, tar));
 	threads.push_back(std::thread(threadFunc, new Dataset(dataset), i*countPerThread, dataset.size(),
-									  config.testPercent, &classCounts, &testCounts, &countsMutex, config.outDir));
+									  config.testPercent, &classCounts, &testCounts, &countsMutex, config.outDir, &saveMutex, tar));
 
 	for(std::thread& thread : threads)
 		thread.join();
@@ -140,28 +157,56 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	bool ret = checkDir(config.outDir);
-	if(!ret)
-		return 3;
-	ret = checkDir(config.outDir/"train");
-	if(!ret)
-		return 3;
-	if(config.testPercent > 0)
+	mtar_t* tar = nullptr;
+	if(!config.tar)
 	{
-		ret = checkDir(config.outDir/"test");
+		bool ret = checkDir(config.outDir);
 		if(!ret)
 			return 3;
+		ret = checkDir(config.outDir/"train");
+		if(!ret)
+			return 3;
+		if(config.testPercent > 0)
+		{
+			ret = checkDir(config.outDir/"test");
+			if(!ret)
+				return 3;
+		}
+	}
+	else
+	{
+		if(config.tar)
+		{
+			tar = new mtar_t;
+			int ret = mtar_open(tar, config.outDir.c_str(), "w");
+			if(ret != 0)
+			{
+				Log(Log::ERROR)<<"Could not create tar archive at "<<config.outDir.c_str();
+				delete tar;
+				return 3;
+			}
+			mtar_write_dir_header(tar, "train");
+			if(config.testPercent > 0)
+				mtar_write_dir_header(tar, "test");
+			config.outDir = "";
+		}
 	}
 
 	if(config.purpose == PURPOSE_CLASSFIY)
 	{
 		EisGeneratorDataset dataset(config.datasetPath, config.desiredSize, 50, 0, true, false);
-		exportDataset<EisGeneratorDataset>(dataset, config);
+		exportDataset<EisGeneratorDataset>(dataset, config, tar);
 	}
 	else if(config.purpose == PURPOSE_REGRESSION)
 	{
 		ParameterRegressionDataset dataset(config.datasetPath.string(), config.desiredSize, 50, 0, true);
-		exportDataset<ParameterRegressionDataset>(dataset, config);
+		exportDataset<ParameterRegressionDataset>(dataset, config, tar);
+	}
+
+	if(tar)
+	{
+		mtar_finalize(tar);
+		delete tar;
 	}
 
 	return 0;

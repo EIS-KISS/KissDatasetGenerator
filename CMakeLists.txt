@@ -1,9 +1,18 @@
 cmake_minimum_required(VERSION 3.0)
 
-project(eisgendirdataset)
+project(eisgendirdataset C CXX)
 set (CMAKE_CXX_STANDARD 20)
 
-set(SRC_FILES src/main.cpp src/log.cpp src/tokenize.cpp src/randomgen.cpp src/hash.cpp src/eisgendata.cpp src/eisdataset.cpp src/parameterregressiondataset.cpp)
+set(SRC_FILES
+	src/main.cpp
+	src/log.cpp
+	src/tokenize.cpp
+	src/randomgen.cpp
+	src/hash.cpp
+	src/eisgendata.cpp
+	src/eisdataset.cpp
+	src/parameterregressiondataset.cpp
+	src/microtar.c)
 
 find_package(PkgConfig REQUIRED)
 pkg_search_module(DRT REQUIRED libeisdrt)

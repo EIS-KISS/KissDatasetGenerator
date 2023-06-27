@@ -19,6 +19,7 @@ static struct argp_option options[] =
   {"purpose", 		'p', "[NAME]",	0,	"dataset type to use, classifiy or regression" },
   {"out-dir",		'o', "[PATH]",	0,	"directory where to export dataset"},
   {"test-percent",	't', "[NUMBER]",0,	"test dataset percentage"},
+  {"archive",		'a', 0,			0,	"save as a tar archive instead of a directory"},
   {"size",			's', "[NUMBER]",0,	"size the dataset should have"},
   { 0 }
 };
@@ -36,6 +37,7 @@ struct Config
 	size_t desiredSize = 100000;
 	int testPercent = 0;
 	Purpose purpose = PURPOSE_CLASSFIY;
+	bool tar = false;
 };
 
 static const char* purposeToStr(Purpose purpose)
@@ -77,6 +79,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'd':
 			config->datasetPath = arg;
+			break;
+		case 'a':
+			config->tar = true;
 			break;
 		case 'o':
 			config->outDir = arg;
