@@ -7,10 +7,11 @@ set(SRC_FILES src/main.cpp src/log.cpp src/tokenize.cpp src/randomgen.cpp src/ha
 
 find_package(PkgConfig REQUIRED)
 pkg_search_module(DRT REQUIRED libeisdrt)
+pkg_search_module(EIS REQUIRED libeisgenerator)
 
 add_executable(${PROJECT_NAME} ${SRC_FILES})
-target_link_libraries( ${PROJECT_NAME} ${DRT_LIBRARIES} -lpthread -leisgenerator)
-target_include_directories(${PROJECT_NAME} ${DRT_INCLUDE_DIRS} PRIVATE)
+target_link_libraries( ${PROJECT_NAME} ${DRT_LIBRARIES} -lpthread ${EIS_LIBRARIES})
+target_include_directories(${PROJECT_NAME} ${DRT_INCLUDE_DIRS} PRIVATE ${EIS_INCLUDE_DIRS})
 target_compile_options(${PROJECT_NAME} PRIVATE
 	"-Wall"
 	"-Wno-reorder"
