@@ -1,13 +1,15 @@
+#include <algorithm>
 #include <eisdrt/eisdrt.h>
 #include <eisdrt/types.h>
 #include <complex>
 #include <eisgenerator/eistype.h>
+#include <limits>
 
 #include "parameterregressiondataset.h"
 #include "log.h"
 
 ParameterRegressionDataset::ParameterRegressionDataset(const std::string& modelStr, int64_t desiredSize, int64_t outputSize, double noiseI, bool drtI):
-model(modelStr), omega(10, 1e6, drtI ? outputSize : outputSize/2, true), noise(noiseI), drt(drtI)
+model(modelStr), omega(1, 10e6, drtI ? outputSize : outputSize/2, true), noise(noiseI), drt(drtI)
 {
 	model.compile();
 	sweepCount = model.getRequiredStepsForSweeps();
@@ -21,6 +23,18 @@ bool ParameterRegressionDataset::isMulticlass()
 	return true;
 }
 
+fvalue ParameterRegressionDataset::max(const std::vector<eis::DataPoint>& data)
+{
+	fvalue maximum = std::numeric_limits<fvalue>::min();
+	for(const eis::DataPoint& point : data)
+	{
+		fvalue length = point.complexVectorLength();
+		if(length > maximum)
+			maximum = length;
+	}
+	return maximum;
+}
+
 eis::EisSpectra ParameterRegressionDataset::getImpl(size_t index)
 {
 	std::vector<eis::DataPoint> data = model.executeSweep(omega, index);
@@ -31,9 +45,37 @@ eis::EisSpectra ParameterRegressionDataset::getImpl(size_t index)
 	{
 		FitMetics fm;
 		try {
-			std::vector<fvalue> drt = calcDrt(data, fm, FitParameters(1000));
+			fvalue rSeries;
+			std::vector<fvalue> drt = calcDrt(data, fm, FitParameters(1000), &rSeries);
 			std::vector<fvalue> omegas = omega.getRangeVector();
 			assert(drt.size() == omegas.size());
+
+			if(*drt.begin() > 0.001)
+			{
+				Log(Log::INFO)<<"Drt low side incompleate";
+				return eis::EisSpectra();
+			}
+
+			if(drt.back() > 0.001)
+			{
+				Log(Log::INFO)<<"Drt high side incompleate";
+				return eis::EisSpectra();
+			}
+
+			if(*std::max_element(drt.begin(), drt.end()) < 0.001)
+			{
+				Log(Log::INFO)<<"Drt is empty, discarding";
+				return eis::EisSpectra();
+			}
+
+			std::vector<eis::DataPoint> recalculatedSpectra = calcImpedance(drt, rSeries, omegas);
+			fvalue dist = eisNyquistDistance(data, recalculatedSpectra);
+			if(dist > 2)
+			{
+				Log(Log::DEBUG)<<"Drt is of poor quality, discarding";
+				return eis::EisSpectra();
+			}
+
 			data.assign(drt.size(), eis::DataPoint());
 			for(size_t i = 0; i < drt.size(); ++i)
 			{
@@ -43,11 +85,11 @@ eis::EisSpectra ParameterRegressionDataset::getImpl(size_t index)
 		}
 		catch (const drt_errror& ex)
 		{
-			Log(Log::DEBUG)<<"Drt calculation failed! using next index";
+			Log(Log::DEBUG)<<"Drt calculation failed!";
 			index++;
 			if(index >= size())
 				index = 0;
-			return getImpl(index);
+			return eis::EisSpectra();
 		}
 	}
 
@@ -76,9 +118,18 @@ std::string ParameterRegressionDataset::modelStringForClass(size_t classNum)
 	for(eis::Componant* componant : componants)
 	{
 		if(classNum > componant->paramCount())
+		{
 			classNum -= componant->paramCount();
+		}
 		else
-			return std::to_string(componant->getComponantChar()) + "p" + std::to_string(classNum);
+		{
+			std::string out(model.getModelStr());
+			out.push_back('+');
+			out.push_back(componant->getComponantChar());
+			out.push_back('p');
+			out.append(std::to_string(classNum));
+			return out;
+		}
 	}
 	return model.getModelStr();
 }

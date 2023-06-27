@@ -57,6 +57,11 @@ void threadFunc(EisDataset* dataset, size_t begin, size_t end, int testPercent,
 	for(size_t i = begin; i < end; ++i)
 	{
 		eis::EisSpectra spectrum = dataset->get(i);
+		if(spectrum.data.empty())
+		{
+			Log(Log::DEBUG)<<"Skipping datapoint "<<i;
+			continue;
+		}
 		size_t label = spectrum.getLabel();
 		spectrum.model = dataset->modelStringForClass(label);
 		spectrum.header = std::to_string(classCounts->at(label));
@@ -94,7 +99,7 @@ void threadFunc(EisDataset* dataset, size_t begin, size_t end, int testPercent,
 template <typename Dataset>
 void exportDataset(Dataset& dataset, const Config& config)
 {
-	Log(Log::INFO)<<"Dataset size: "<<dataset.size();
+	Log(Log::INFO)<<"Dataset size: "<<dataset.size()<<" "<<dataset.modelStringForClass(0);
 
 	std::mutex countsMutex;
 	std::vector<size_t> classCounts(dataset.classesCount(), 0);
@@ -147,7 +152,6 @@ int main(int argc, char** argv)
 		if(!ret)
 			return 3;
 	}
-
 
 	if(config.purpose == PURPOSE_CLASSFIY)
 	{
