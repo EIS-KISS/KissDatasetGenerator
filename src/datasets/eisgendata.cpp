@@ -1,5 +1,8 @@
 #include "eisgendata.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <vector>
 #include <assert.h>
 #include <math.h>
 #include <cstdlib>
@@ -7,12 +10,12 @@
 #include <eisgenerator/basicmath.h>
 #include <sstream>
 #include <fstream>
+#include <future>
 
-#include "log.h"
 #include "filterdata.h"
+#include "spectra.h"
 #include "tokenize.h"
-
-using namespace eis;
+#include "../log.h"
 
 static std::vector<std::string> readCircutsFromStream(std::istream& ss)
 {
@@ -29,24 +32,24 @@ static std::vector<std::string> readCircutsFromStream(std::istream& ss)
 	return out;
 }
 
-EisGeneratorDataset::EisGeneratorDataset(int64_t outputSize, double noiseI, bool repetitionI):
-omega(10, 1e6, outputSize/2, true), noise(noiseI), repetition(repetitionI)
+EisGeneratorDataset::EisGeneratorDataset(int64_t outputSize, double noiseI):
+omega(10, 1e6, outputSize/2, true), noise(noiseI)
 {
 }
 
 EisGeneratorDataset::EisGeneratorDataset(std::istream& is, int64_t desiredSize, int64_t outputSize,
-										 double noise, bool inductivity, bool repetition):
-EisGeneratorDataset(outputSize, noise, repetition)
+										 double noise):
+EisGeneratorDataset(outputSize, noise)
 {
 	std::vector<std::string> circuits = readCircutsFromStream(is);
 	if(circuits.empty())
 		throw eis::file_error("stream dosent contain any circuits");
-	addVectorOfModels(circuits, desiredSize, inductivity);
+	addVectorOfModels(circuits, desiredSize);
 }
 
-EisGeneratorDataset::EisGeneratorDataset(const std::filesystem::path& path, int64_t desiredSize,
-										 int64_t outputSize, double noise, bool inductivity, bool repetition):
-EisGeneratorDataset(outputSize, noise, repetition)
+EisGeneratorDataset::EisGeneratorDataset(const std::filesystem::path& path, int64_t desiredSize, int64_t outputSize,
+										 double noise):
+EisGeneratorDataset(outputSize, noise)
 {
 	std::ifstream is(path, std::ios::in);
 	if(!is.is_open())
@@ -54,33 +57,34 @@ EisGeneratorDataset(outputSize, noise, repetition)
 	std::vector<std::string> circuits = readCircutsFromStream(is);
 	if(circuits.empty())
 		throw eis::file_error("file dosent contain any circuits: " + path.string());
-	addVectorOfModels(circuits, desiredSize, inductivity);
+	addVectorOfModels(circuits, desiredSize);
 }
 
 EisGeneratorDataset::EisGeneratorDataset(const char* cStr, size_t cStrLen, int64_t desiredSize,
-										 int64_t outputSize, double noise, bool inductivity, bool repetition):
-EisGeneratorDataset(outputSize, noise, repetition)
+										 int64_t outputSize, double noise):
+EisGeneratorDataset(outputSize, noise)
 {
 	std::stringstream ss(std::string(cStr, cStrLen));
 	std::vector<std::string> circuits = readCircutsFromStream(ss);
 	if(circuits.empty())
 		throw std::runtime_error("array contains no circuits");
-	addVectorOfModels(circuits, desiredSize, inductivity);
+	addVectorOfModels(circuits, desiredSize);
 }
 
-void EisGeneratorDataset::addVectorOfModels(const std::vector<std::string>& modelStrs, int64_t desiredSize, bool inductivity)
+void EisGeneratorDataset::addVectorOfModels(const std::vector<std::string>& modelStrs, int64_t desiredSize)
 {
 	int64_t sizePerModel = desiredSize/modelStrs.size();
 
-	assert(sizePerModel > 3);
+	if(sizePerModel < 3)
+	{
+		sizePerModel = 3;
+		Log(Log::WARN)<<"EisGeneratorDataset desired size to small for dataset adjusting to "<<sizePerModel*modelStrs.size();
+	}
 	for(const std::string& modelStr : modelStrs)
 	{
 		std::string workModelStr = stripWhitespace(modelStr);
 		if(workModelStr.empty())
 			continue;
-
-		if(inductivity)
-			workModelStr.insert(0, std::string("l{5e-6}-"));
 
 		Log(Log::DEBUG, false)<<__func__<<" adding model "<<workModelStr<<" attempting to give "<<sizePerModel<<" examples ";
 
@@ -90,25 +94,17 @@ void EisGeneratorDataset::addVectorOfModels(const std::vector<std::string>& mode
 			Log(Log::WARN)<<__func__<<" invalid model string "<<workModelStr;
 			continue;
 		}
-		model->compile();
 		if(model->getRequiredStepsForSweeps() > 1)
 			model->setParamSweepCountClosestTotal(sizePerModel);
 		Log(Log::DEBUG)<<"got "<<model->getRequiredStepsForSweeps();
 
 		addModel(model);
-	}
-
-	if(repetition && desiredSize/2 > static_cast<ssize_t>(trueSize()))
-	{
-		repetitionCount = desiredSize/trueSize();
-		Log(Log::WARN)<<__func__<<"Requested dataset size is impossible to fullfill, "
-			<<"will use repetition of "<<repetitionCount<<", "
-			<<"consider using a expander dataset instead";
+		compileModels();
 	}
 
 	size_t single = singleSweepCount();
-	Log(Log::DEBUG)<<__func__<<" dataset now has "<<trueSize()<<" examples from "<<single
-		<<" single sweep models and "<<(models.size()-single)<<" regular models and a repetition count of "<<repetitionCount;
+	Log(Log::DEBUG)<<__func__<<" dataset now has "<<size()<<" examples from "<<single
+		<<" single sweep models and "<<(models.size()-single)<<" regular models";
 }
 
 void EisGeneratorDataset::addModel(const eis::Model& model)
@@ -152,6 +148,18 @@ void EisGeneratorDataset::addModel(std::shared_ptr<eis::Model> model)
 	models.push_back(modelData);
 }
 
+void EisGeneratorDataset::compileModels()
+{
+	std::vector<std::future<bool>> futures;
+	for(ModelData& model : models)
+	{
+		if(model.isSingleSweep == false)
+			futures.push_back(std::async(std::launch::async, &eis::Model::compile, model.model));
+	}
+	for(std::future<bool>& future : futures)
+		future.wait();
+}
+
 std::pair<size_t, size_t> EisGeneratorDataset::getModelAndOffsetForIndex(size_t index) const
 {
 	size_t model = 0;
@@ -168,7 +176,7 @@ std::pair<size_t, size_t> EisGeneratorDataset::getModelAndOffsetForIndex(size_t 
 
 eis::EisSpectra EisGeneratorDataset::getImpl(size_t index)
 {
-	index = index % trueSize();
+	assert(index < size());
 	std::pair<size_t, size_t> modelAndOffset = getModelAndOffsetForIndex(index);
 
 	std::vector<eis::DataPoint> data;
@@ -199,12 +207,9 @@ eis::EisSpectra EisGeneratorDataset::getImpl(size_t index)
 	if(noise > 0)
 		eis::noise(data, noise, false);
 
-	return eis::EisSpectra(data, "", "", classForIndex(index), classesCount());
-}
+	eis::EisSpectra spectra(data, models[modelAndOffset.first].model->getModelStr(), typeid(this).name());
 
-size_t EisGeneratorDataset::classesCount() const
-{
-	return modelStrings.size();
+	return spectra;
 }
 
 size_t EisGeneratorDataset::frequencies()
@@ -214,22 +219,10 @@ size_t EisGeneratorDataset::frequencies()
 
 size_t EisGeneratorDataset::size() const
 {
-	return trueSize()*repetitionCount;
-}
-
-size_t EisGeneratorDataset::trueSize() const
-{
 	size_t size = 0;
 	for(size_t i = 0; i < models.size(); ++i)
 		size += models[i].sweepSize;
 	return size;
-}
-std::vector<int64_t>  EisGeneratorDataset::classCounts()
-{
-	std::vector<int64_t> out(classesCount(), 0);
-	for(size_t i = 0; i < models.size(); ++i)
-		out[models[i].classNum] = out[models[i].classNum] + static_cast<int64_t>(models[i].sweepSize);
-	return out;
 }
 
 size_t EisGeneratorDataset::classForIndex(size_t index)

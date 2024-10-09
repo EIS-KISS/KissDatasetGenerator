@@ -30,9 +30,7 @@ public:
 
 	void setOmegaRange(eis::Range range);
 
-	virtual size_t classesCount() const override;
 	virtual size_t classForIndex(size_t index) override;
 	virtual std::string modelStringForClass(size_t classNum) override;
 	virtual size_t size() const override;
-	virtual bool isMulticlass() override;
 };

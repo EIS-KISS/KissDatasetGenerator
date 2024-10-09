@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <cstddef>
-#include <eisgenerator/eistype.h>
 #include <vector>
 #include <eisgenerator/model.h>
 #include <string>
@@ -10,8 +9,10 @@
 #include <memory>
 
 #include "eisdataset.h"
+#include "spectra.h"
 
-class EisGeneratorDataset: public EisDataset
+class EisGeneratorDataset :
+public EisDataset
 {
 	struct ModelData
 	{
@@ -34,23 +35,18 @@ private:
 
 	eis::Range omega;
 	double noise;
-	size_t repetitionCount = 1;
-	bool repetition;
 
 private:
 	std::pair<size_t, size_t> getModelAndOffsetForIndex(size_t index) const;
-	void addVectorOfModels(const std::vector<std::string>& modelStrs, int64_t desiredSize, bool inductivity);
-	size_t trueSize() const;
+	void addVectorOfModels(const std::vector<std::string>& modelStrs, int64_t desiredSize);
+
 	virtual eis::EisSpectra getImpl(size_t index) override;
 
 public:
-	explicit EisGeneratorDataset(int64_t outputSize = 100, double noiseI = 0, bool repetition = false);
-	explicit EisGeneratorDataset(const std::filesystem::path& path, int64_t desiredSize, int64_t outputSize,
-								 double noise, bool inductivity, bool repetition = false);
-	explicit EisGeneratorDataset(std::istream& is, int64_t outputSize, int64_t desiredSize, double noise,
-								 bool inductivity, bool repetition = false);
-	explicit EisGeneratorDataset(const char* cStr, size_t cStrLen, int64_t desiredSize, int64_t outputSize, double noise,
-								 bool inductivity, bool repetition = false);
+	explicit EisGeneratorDataset(int64_t outputSize = 100, double noiseI = 0);
+	explicit EisGeneratorDataset(const std::filesystem::path& path, int64_t desiredSize, int64_t outputSize, double noise);
+	explicit EisGeneratorDataset(std::istream& is, int64_t outputSize, int64_t desiredSize, double noise);
+	explicit EisGeneratorDataset(const char* cStr, size_t cStrLen, int64_t desiredSize, int64_t outputSize, double noise);
 
 	EisGeneratorDataset(const EisGeneratorDataset& in) = default;
 	void addModel(const eis::Model& model);
@@ -58,13 +54,10 @@ public:
 	EisGeneratorDataset* getTestDataset();
 	size_t frequencies();
 	void setOmegaRange(eis::Range range);
-	const eis::Range& getOmegaRange(){return omega;}
 	size_t singleSweepCount();
+	void compileModels();
 
-	virtual std::vector<int64_t> classCounts() override;
-	virtual size_t classesCount() const override;
 	virtual size_t classForIndex(size_t index) override;
 	virtual std::string modelStringForClass(size_t classNum) override;
 	virtual size_t size() const override;
-	virtual ~EisGeneratorDataset(){}
 };

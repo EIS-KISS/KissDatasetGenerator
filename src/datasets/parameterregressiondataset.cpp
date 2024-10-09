@@ -3,10 +3,11 @@
 #include <eisdrt/types.h>
 #include <complex>
 #include <eisgenerator/eistype.h>
+#include <eisgenerator/basicmath.h>
 #include <limits>
 
 #include "parameterregressiondataset.h"
-#include "log.h"
+#include "../log.h"
 
 ParameterRegressionDataset::ParameterRegressionDataset(const std::string& modelStr, int64_t desiredSize, int64_t outputSize, double noiseI, bool drtI):
 model(modelStr), omega(1, 10e6, drtI ? outputSize : outputSize/2, true), noise(noiseI), drt(drtI)
@@ -18,32 +19,14 @@ model(modelStr), omega(1, 10e6, drtI ? outputSize : outputSize/2, true), noise(n
 	parameterCount = model.getParameterCount();
 }
 
-bool ParameterRegressionDataset::isMulticlass()
-{
-	return true;
-}
-
-fvalue ParameterRegressionDataset::max(const std::vector<eis::DataPoint>& data)
-{
-	fvalue maximum = std::numeric_limits<fvalue>::min();
-	for(const eis::DataPoint& point : data)
-	{
-		fvalue length = point.complexVectorLength();
-		if(length > maximum)
-			maximum = length;
-	}
-	return maximum;
-}
-
 eis::EisSpectra ParameterRegressionDataset::getImpl(size_t index)
 {
 	std::vector<eis::DataPoint> data = model.executeSweep(omega, index);
-	std::vector<fvalue> parameters = model.getFlatParameters();
 
 	assert(data.size());
 	if(drt)
 	{
-		FitMetics fm;
+		FitMetrics fm;
 		try {
 			fvalue rSeries;
 			std::vector<fvalue> drt = calcDrt(data, fm, FitParameters(1000), &rSeries);
@@ -69,7 +52,7 @@ eis::EisSpectra ParameterRegressionDataset::getImpl(size_t index)
 			}
 
 			std::vector<eis::DataPoint> recalculatedSpectra = calcImpedance(drt, rSeries, omegas);
-			fvalue dist = eisNyquistDistance(data, recalculatedSpectra);
+			fvalue dist = eis::eisNyquistDistance(data, recalculatedSpectra);
 			if(dist > 2)
 			{
 				Log(Log::DEBUG)<<"Drt is of poor quality, discarding";
@@ -83,7 +66,7 @@ eis::EisSpectra ParameterRegressionDataset::getImpl(size_t index)
 				data[i].omega = omegas[i];
 			}
 		}
-		catch (const drt_errror& ex)
+		catch (const drt_error& ex)
 		{
 			Log(Log::DEBUG)<<"Drt calculation failed!";
 			index++;
@@ -93,12 +76,11 @@ eis::EisSpectra ParameterRegressionDataset::getImpl(size_t index)
 		}
 	}
 
-	return eis::EisSpectra(data, model.getModelStr(), "", parameters);
-}
+	eis::EisSpectra spectra(data, model.getModelStr(), typeid(this).name());
 
-size_t ParameterRegressionDataset::classesCount() const
-{
-	return parameterCount;
+	spectra.labelNames = model.getParameterNames();
+	spectra.setLabels(model.getFlatParameters());
+	return spectra;
 }
 
 size_t ParameterRegressionDataset::size() const
