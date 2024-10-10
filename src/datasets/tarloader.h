@@ -7,30 +7,39 @@
 #include <kisstype/spectra.h>
 
 #include "eisdataset.h"
+#include "microtar.h"
 
 
-class EisDirDataset : public EisDataset
+class TarDataset : public EisDataset
 {
 private:
 
-	struct FileNameStr
+	mtar_t tar;
+
+	struct File
 	{
 		std::filesystem::path path;
 		size_t classNum;
+		size_t pos;
+		size_t size;
 	};
 
-	std::vector<EisDirDataset::FileNameStr> fileNames;
+	std::vector<TarDataset::File> files;
 	size_t inputSize;
 	std::vector<std::string> modelStrs;
 	std::vector<std::string> selectLabels;
 	std::vector<std::string> extraInputs;
+	std::filesystem::path path;
 	bool normalization;
 
 	virtual eis::Spectra getImpl(size_t index) override;
+	eis::Spectra loadSpectraAtCurrentPos(size_t size);
 
 public:
-	explicit EisDirDataset(const std::string& dirName, int64_t inputSize = 100, std::vector<std::string> selectLabels = {}, std::vector<std::string> extraInputs = {}, bool normalization = true);
-	EisDirDataset(const EisDirDataset& in) = default;
+	explicit TarDataset(const std::filesystem::path& path, int64_t inputSize = 100, std::vector<std::string> selectLabels = {}, std::vector<std::string> extraInputs = {}, bool normalization = true);
+	TarDataset(const TarDataset& in);
+	TarDataset& operator=(const TarDataset& in);
+	~TarDataset();
 
 	virtual size_t size() const override;
 

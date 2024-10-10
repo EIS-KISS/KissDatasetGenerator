@@ -174,7 +174,7 @@ std::pair<size_t, size_t> EisGeneratorDataset::getModelAndOffsetForIndex(size_t 
 	return std::pair<size_t, size_t>(model, index);
 }
 
-eis::EisSpectra EisGeneratorDataset::getImpl(size_t index)
+eis::Spectra EisGeneratorDataset::getImpl(size_t index)
 {
 	assert(index < size());
 	std::pair<size_t, size_t> modelAndOffset = getModelAndOffsetForIndex(index);
@@ -207,7 +207,7 @@ eis::EisSpectra EisGeneratorDataset::getImpl(size_t index)
 	if(noise > 0)
 		eis::noise(data, noise, false);
 
-	eis::EisSpectra spectra(data, models[modelAndOffset.first].model->getModelStr(), typeid(this).name());
+	eis::Spectra spectra(data, models[modelAndOffset.first].model->getModelStr(), typeid(this).name());
 
 	return spectra;
 }

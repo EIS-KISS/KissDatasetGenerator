@@ -37,7 +37,7 @@ private:
 	std::pair<size_t, size_t> getModelAndOffsetForIndex(size_t index) const;
 	void addVectorOfModels(const std::vector<std::string>& modelStrs, int64_t desiredSize);
 
-	virtual eis::EisSpectra getImpl(size_t index) override;
+	virtual eis::Spectra getImpl(size_t index) override;
 	ModelData* findSameClass(std::string modelStr);
 
 public:

@@ -13,6 +13,8 @@ set(SRC_FILES
 	src/datasets/eisdataset.cpp
 	src/datasets/eisgendatanoise.cpp
 	src/datasets/parameterregressiondataset.cpp
+	src/datasets/dirloader.cpp
+	src/datasets/tarloader.cpp
 	src/microtar.c)
 
 find_package(PkgConfig REQUIRED)

@@ -1,7 +1,7 @@
 #include "eisdataset.h"
 
-eis::EisSpectra EisDataset::get(size_t index)
+eis::Spectra EisDataset::get(size_t index)
 {
-	eis::EisSpectra data = getImpl(index);
+	eis::Spectra data = getImpl(index);
 	return data;
 }

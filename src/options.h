@@ -9,7 +9,7 @@ const char *argp_program_version = "kissdatasetgenerator";
 const char *argp_program_bug_address = "<carl@uvos.xyz>";
 static char doc[] = "Application that checkes and conditions a dataset in an eis dir";
 static char args_doc[] = "";
-#define DATASET_LIST "gen, gennoise, passfail, regression, coincellhellpost, coincellhellpre"
+#define DATASET_LIST "gen, gennoise, passfail, regression, dir, tar"
 
 typedef enum
 {
@@ -18,8 +18,8 @@ typedef enum
 	DATASET_GEN_NOISE,
 	DATASET_PASSFAIL,
 	DATASET_REGRESSION,
-	DATASET_COINCELLHELL_POSTDICT,
-	DATASET_COINCELLHELL_PREDICT
+	DATASET_DIR,
+	DATASET_TAR
 } DatasetMode;
 
 static inline constexpr const char* datasetModeToStr(const DatasetMode mode)
@@ -34,10 +34,10 @@ static inline constexpr const char* datasetModeToStr(const DatasetMode mode)
 			return "passfail";
 		case DATASET_REGRESSION:
 			return "regression";
-		case DATASET_COINCELLHELL_POSTDICT:
-			return "coincellhellpost";
-		case DATASET_COINCELLHELL_PREDICT:
-			return "coincellhellpre";
+		case DATASET_DIR:
+			return "dir";
+		case DATASET_TAR:
+			return "tar";
 		default:
 			return "invalid";
 	}
@@ -53,10 +53,10 @@ static inline DatasetMode parseDatasetMode(const std::string& in)
 		return DATASET_PASSFAIL;
 	else if(in == datasetModeToStr(DATASET_REGRESSION))
 		return DATASET_REGRESSION;
-	else if(in == datasetModeToStr(DATASET_COINCELLHELL_POSTDICT))
-		return DATASET_COINCELLHELL_POSTDICT;
-	else if(in == datasetModeToStr(DATASET_COINCELLHELL_PREDICT))
-		return DATASET_COINCELLHELL_PREDICT;
+	else if(in == datasetModeToStr(DATASET_DIR))
+		return DATASET_DIR;
+	else if(in == datasetModeToStr(DATASET_TAR))
+		return DATASET_TAR;
 	return DATASET_INVALID;
 }
 
@@ -64,10 +64,13 @@ struct Config
 {
 	std::filesystem::path datasetPath;
 	std::filesystem::path outDir = "./out";
+	std::string extaInputs;
+	std::string selectLabels;
 	size_t desiredSize = 100000;
 	int testPercent = 0;
-	DatasetMode mode = DATASET_GEN;
+	DatasetMode mode = DATASET_INVALID;
 	bool tar = false;
+	bool normalization = true;
 };
 
 static struct argp_option options[] =
@@ -80,6 +83,9 @@ static struct argp_option options[] =
   {"test-percent",	'p', "[NUMBER]",0,	"test dataset percentage"},
   {"archive",		'a', 0,			0,	"save as a tar archive instead of a directory"},
   {"size",			's', "[NUMBER]",0,	"size the dataset should have"},
+  {"select-labels",	'l', "[LABLE1,LABEL2,...]",0,	"select thiese labels to appear in the output dataset (requires them to be present in the input)"},
+  {"extra-inputs",	'x', "[INPUT1,INPUT2,...]]",0,	"select thiese labels to appear in the output dataset as extra inputs (requires them to be present in the input)"},
+  {"no-normalization",	'n', 0,	0,	"turn off normalization on dataset types that ususally do this"},
   { 0 }
 };
 
@@ -119,6 +125,15 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 't':
 			config->mode = parseDatasetMode(std::string(arg));
+			break;
+		case 'l':
+			config->selectLabels = std::string(arg);
+			break;
+		case 'x':
+			config->extaInputs = std::string(arg);
+			break;
+		case 'n':
+			config->normalization = false;
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;

@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <string>
 #include <vector>
-#include <eistype.h>
+#include <kisstype/type.h>
 #include <spectra.h>
 #include <mutex>
 #include <memory>
@@ -31,10 +31,10 @@ private:
 		normalize(data);
 	}
 
-	virtual eis::EisSpectra getImpl(size_t index) override
+	virtual eis::Spectra getImpl(size_t index) override
 	{
 		datasetMutex_->lock();
-		eis::EisSpectra example = dataset_->get(index % dataset_->size());
+		eis::Spectra example = dataset_->get(index % dataset_->size());
 		datasetMutex_->unlock();
 		bool pass = true;
 		if(index < dataset_->size())

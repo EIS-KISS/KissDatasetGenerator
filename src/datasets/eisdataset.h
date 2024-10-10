@@ -1,7 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <string>
-#include <kisstype/ype.h>
+#include <kisstype/spectra.h>
 
 class EisDataset
 {

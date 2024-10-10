@@ -7,6 +7,7 @@
 #include <thread>
 #include <mutex>
 #include <cassert>
+#include <vector>
 
 #include "datasets/eisgendatanoise.h"
 #include "log.h"
@@ -15,9 +16,12 @@
 #include "datasets/eisdataset.h"
 #include "datasets/eisgendata.h"
 #include "datasets/passfaildataset.h"
+#include "datasets/dirloader.h"
+#include "datasets/tarloader.h"
 #include "randomgen.h"
 #include "microtar.h"
 #include "hash.h"
+#include "tokenize.h"
 
 static bool checkDir(const std::filesystem::path& outDir)
 {
@@ -35,7 +39,9 @@ static bool checkDir(const std::filesystem::path& outDir)
 static bool save(const eis::Spectra& spectrum, const std::filesystem::path& outDir, std::mutex& saveMutex, mtar_t* tar = nullptr)
 {
 	uint64_t hash = murmurHash64(spectrum.data.data(), spectrum.data.size()*sizeof(*spectrum.data.data()), 8371);
-	std::string filename(spectrum.model);
+	std::string model = spectrum.model;
+	eis::purgeEisParamBrackets(model);
+	std::string filename(model);
 	filename.push_back('_');
 	filename.append(spectrum.header);
 	filename.push_back('_');
@@ -46,9 +52,14 @@ static bool save(const eis::Spectra& spectrum, const std::filesystem::path& outD
 
 	if(!tar)
 	{
-		ret = spectrum.saveToDisk(outDir/filename);
-		if(!ret)
+		try
+		{
+			spectrum.saveToDisk(outDir/filename);
+		}
+		catch(eis::file_error &err)
+		{
 			Log(Log::ERROR)<<"Could not save "<<outDir/filename<<" to disk\n";
+		}
 	}
 	else
 	{
@@ -140,6 +151,9 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
+	std::vector<std::string> selectLabelKeys = config.selectLabels.empty() ? std::vector<std::string>() : tokenize(config.selectLabels, ',');
+	std::vector<std::string> extraInputKeys = config.extaInputs.empty() ? std::vector<std::string>() : tokenize(config.extaInputs, ',');;
+
 	mtar_t* traintar = nullptr;
 	mtar_t* testtar = nullptr;
 	if(!config.tar)
@@ -191,21 +205,38 @@ int main(int argc, char** argv)
 	{
 		case DATASET_GEN:
 		{
-			EisGeneratorDataset dataset(config.datasetPath, config.desiredSize, 50, 0);
+			EisGeneratorDataset dataset(config.datasetPath, config.desiredSize, 100, 0);
 			exportDataset<EisGeneratorDataset>(dataset, config, traintar, testtar);
 		}
 		break;
 		case DATASET_GEN_NOISE:
 		{
-			EisGeneratorDatasetNoise dataset(config.datasetPath, config.desiredSize, 50);
+			EisGeneratorDatasetNoise dataset(config.datasetPath, config.desiredSize, 100);
 			exportDataset<EisGeneratorDatasetNoise>(dataset, config, traintar, testtar);
 		}
 		break;
 		case DATASET_PASSFAIL:
 		{
-			EisGeneratorDataset gendataset(config.datasetPath, config.desiredSize, 50, 0);
+			EisGeneratorDataset gendataset(config.datasetPath, config.desiredSize, 100, 0);
 			PassFaillDataset dataset(&gendataset);
 			exportDataset<PassFaillDataset>(dataset, config, traintar, testtar);
+		}
+		break;
+		case DATASET_REGRESSION:
+		{
+			ParameterRegressionDataset dataset(config.datasetPath, config.desiredSize, 100, 0);
+			exportDataset<ParameterRegressionDataset>(dataset, config, traintar, testtar);
+		}
+		break;
+		case DATASET_DIR:
+		{
+			EisDirDataset dataset(config.datasetPath, 100, selectLabelKeys, extraInputKeys, config.normalization);
+			exportDataset<EisDirDataset>(dataset, config, traintar, testtar);
+		}
+		case DATASET_TAR:
+		{
+			TarDataset dataset(config.datasetPath, 100, selectLabelKeys, extraInputKeys, config.normalization);
+			exportDataset<TarDataset>(dataset, config, traintar, testtar);
 		}
 		break;
 		default:

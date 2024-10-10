@@ -2,7 +2,7 @@
 #include <eisdrt/eisdrt.h>
 #include <eisdrt/types.h>
 #include <complex>
-#include <eisgenerator/eistype.h>
+#include <kisstype/type.h>
 #include <eisgenerator/basicmath.h>
 #include <limits>
 
@@ -19,7 +19,7 @@ model(modelStr), omega(1, 10e6, drtI ? outputSize : outputSize/2, true), noise(n
 	parameterCount = model.getParameterCount();
 }
 
-eis::EisSpectra ParameterRegressionDataset::getImpl(size_t index)
+eis::Spectra ParameterRegressionDataset::getImpl(size_t index)
 {
 	std::vector<eis::DataPoint> data = model.executeSweep(omega, index);
 
@@ -36,19 +36,19 @@ eis::EisSpectra ParameterRegressionDataset::getImpl(size_t index)
 			if(*drt.begin() > 0.001)
 			{
 				Log(Log::INFO)<<"Drt low side incompleate";
-				return eis::EisSpectra();
+				return eis::Spectra();
 			}
 
 			if(drt.back() > 0.001)
 			{
 				Log(Log::INFO)<<"Drt high side incompleate";
-				return eis::EisSpectra();
+				return eis::Spectra();
 			}
 
 			if(*std::max_element(drt.begin(), drt.end()) < 0.001)
 			{
 				Log(Log::INFO)<<"Drt is empty, discarding";
-				return eis::EisSpectra();
+				return eis::Spectra();
 			}
 
 			std::vector<eis::DataPoint> recalculatedSpectra = calcImpedance(drt, rSeries, omegas);
@@ -56,7 +56,7 @@ eis::EisSpectra ParameterRegressionDataset::getImpl(size_t index)
 			if(dist > 2)
 			{
 				Log(Log::DEBUG)<<"Drt is of poor quality, discarding";
-				return eis::EisSpectra();
+				return eis::Spectra();
 			}
 
 			data.assign(drt.size(), eis::DataPoint());
@@ -72,11 +72,11 @@ eis::EisSpectra ParameterRegressionDataset::getImpl(size_t index)
 			index++;
 			if(index >= size())
 				index = 0;
-			return eis::EisSpectra();
+			return eis::Spectra();
 		}
 	}
 
-	eis::EisSpectra spectra(data, model.getModelStr(), typeid(this).name());
+	eis::Spectra spectra(data, model.getModelStrWithParam(), typeid(this).name());
 
 	spectra.labelNames = model.getParameterNames();
 	spectra.setLabels(model.getFlatParameters());

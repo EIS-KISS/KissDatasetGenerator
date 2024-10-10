@@ -1,6 +1,6 @@
 #pragma once
 
-#include <eisgenerator/eistype.h>
+#include <kisstype/type.h>
 #include <eisgenerator/model.h>
 #include <string>
 
@@ -21,11 +21,11 @@ private:
 	bool drt;
 
 private:
-	virtual eis::EisSpectra getImpl(size_t index) override;
+	virtual eis::Spectra getImpl(size_t index) override;
 	static fvalue max(const std::vector<eis::DataPoint>& data);
 
 public:
-	explicit ParameterRegressionDataset(const std::string& model, int64_t desiredSize, int64_t outputSize = 100, double noiseI = 0, bool drtI = true);
+	explicit ParameterRegressionDataset(const std::string& model, int64_t desiredSize, int64_t outputSize = 100, double noiseI = 0, bool drtI = false);
 	ParameterRegressionDataset(const ParameterRegressionDataset& in) = default;
 
 	void setOmegaRange(eis::Range range);
