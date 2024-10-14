@@ -2,6 +2,7 @@
 
 #include <eisgenerator/normalize.h>
 #include <eisgenerator/basicmath.h>
+#include <kisstype/type.h>
 
 inline void filterData(std::vector<eis::DataPoint>& data, size_t outputSize)
 {

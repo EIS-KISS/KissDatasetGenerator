@@ -81,14 +81,25 @@ void threadFunc(EisDataset* dataset, size_t begin, size_t end, int testPercent, 
 	Log(Log::INFO)<<"Thread doing "<<begin<<" to "<<end-1;
 	printMutex->unlock();
 	int loggedFor = 0;
+	size_t dataSize = 0;
 	for(size_t i = begin; i < end; ++i)
 	{
 		eis::Spectra spectrum = dataset->get(i);
 		if(spectrum.data.empty())
 		{
 			std::scoped_lock lock(*printMutex);
-			Log(Log::DEBUG)<<"Skipping datapoint "<<i;
+			Log(Log::WARN)<<"Skipping datapoint "<<i;
 			continue;
+		}
+
+		if(dataSize == 0)
+		{
+			dataSize = spectrum.data.size();
+		}
+		else if(dataSize != spectrum.data.size())
+		{
+			std::scoped_lock lock(*printMutex);
+			Log(Log::WARN)<<"Data at index "<<i<<" has size "<<spectrum.data.size()<<" but "<<dataSize<<" was expected!!";
 		}
 
 		bool test = (testPercent > 0 && rd::rand(100) < testPercent);
@@ -98,11 +109,12 @@ void threadFunc(EisDataset* dataset, size_t begin, size_t end, int testPercent, 
 		else
 			save(spectrum, outDir/"train", *saveMutex, traintar);
 
-		int permill = ((i-begin)*1000)/(end-begin);
-		if(permill != loggedFor)
+		int percent = ((i-begin)*100)/(end-begin);
+		if(percent != loggedFor)
 		{
-			loggedFor = permill;
-			Log(Log::INFO)<<begin<<" -> "<<end<<' '<<static_cast<double>(permill)/10.0<<'%';
+			loggedFor = percent;
+			std::scoped_lock lock(*printMutex);
+			Log(Log::INFO)<<begin<<" -> "<<end<<' '<<percent<<'%';
 		}
 	}
 	delete dataset;
