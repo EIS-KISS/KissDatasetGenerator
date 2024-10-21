@@ -43,8 +43,6 @@ static bool save(const eis::Spectra& spectrum, const std::filesystem::path& outD
 	eis::purgeEisParamBrackets(model);
 	std::string filename(model);
 	filename.push_back('_');
-	filename.append(spectrum.header);
-	filename.push_back('_');
 	filename.append(std::to_string(hash));
 	filename.append(".csv");
 
@@ -245,6 +243,7 @@ int main(int argc, char** argv)
 			EisDirDataset dataset(config.datasetPath, 100, selectLabelKeys, extraInputKeys, config.normalization);
 			exportDataset<EisDirDataset>(dataset, config, traintar, testtar);
 		}
+		break;
 		case DATASET_TAR:
 		{
 			TarDataset dataset(config.datasetPath, 100, selectLabelKeys, extraInputKeys, config.normalization);

@@ -34,6 +34,7 @@ target_compile_options(${PROJECT_NAME} PRIVATE
 	"-ftree-vectorize"
 	"-g"
 	"-fno-strict-aliasing"
+	"-fno-omit-frame-pointer"
 	)
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 17)
 
