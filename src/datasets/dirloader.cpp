@@ -141,8 +141,7 @@ eis::Spectra EisDirDataset::getImpl(size_t index)
 		assert(false);
 	}
 
-	if(normalization)
-		filterData(data.data, inputSize);
+	filterData(data.data, inputSize, normalization);
 
 	if(!selectLabels.empty() || !extraInputs.empty())
 	{

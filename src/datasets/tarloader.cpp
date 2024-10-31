@@ -137,8 +137,7 @@ eis::Spectra TarDataset::getImpl(size_t index)
 	mtar_seek(&tar, files[index].pos);
 	eis::Spectra spectra = loadSpectraAtCurrentPos(files[index].size);
 
-	if(normalization)
-		filterData(spectra.data, inputSize);
+	filterData(spectra.data, inputSize, normalization);
 
 	if(!selectLabels.empty() || !extraInputs.empty())
 	{

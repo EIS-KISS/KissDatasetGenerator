@@ -195,7 +195,7 @@ eis::Spectra EisGeneratorDataset::getImpl(size_t index)
 	}
 
 	assert(data.size());
-	filterData(data, omega.count*2);
+	filterData(data, omega.count*2, true);
 
 	size_t presize = data.size();
 	removeDuplicates(data);

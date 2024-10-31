@@ -174,7 +174,7 @@ eis::Spectra EisGeneratorDatasetNoise::getImpl(size_t index)
 	eis::normalize(data);
 	noise.add(data);
 	eis::noise(data, 0.001, false);
-	filterData(data, omega.count*2);
+	filterData(data, omega.count*2, true);
 
 	if(data.size() != omega.count)
 	{
