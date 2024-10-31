@@ -8,6 +8,7 @@
 #include <mutex>
 #include <cassert>
 #include <vector>
+#include <set>
 
 #include "datasets/eisgendatanoise.h"
 #include "log.h"
@@ -36,17 +37,37 @@ static bool checkDir(const std::filesystem::path& outDir)
 	return true;
 }
 
-static bool save(const eis::Spectra& spectrum, const std::filesystem::path& outDir, std::mutex& saveMutex, mtar_t* tar = nullptr)
+static std::string constructFilename(const eis::Spectra& spectrum, int offset)
 {
-	uint64_t hash = murmurHash64(spectrum.data.data(), spectrum.data.size()*sizeof(*spectrum.data.data()), 8371);
+	uint64_t hash = murmurHash64(spectrum.data.data(), spectrum.data.size()*sizeof(*spectrum.data.data()), 8371) + offset;
 	std::string model = spectrum.model;
 	eis::purgeEisParamBrackets(model);
 	std::string filename(model);
 	filename.push_back('_');
 	filename.append(std::to_string(hash));
 	filename.append(".csv");
+	return filename;
+}
 
+static bool save(const eis::Spectra& spectrum, const std::filesystem::path& outDir, std::mutex& saveMutex, std::set<std::string>& filenames, mtar_t* tar = nullptr)
+{
 	bool ret = true;
+	std::string filename = constructFilename(spectrum, 0);
+
+	{
+		std::scoped_lock<std::mutex> lk(saveMutex);
+		if(filenames.count(filename) == 1)
+		{
+			Log(Log::WARN)<<"Dataset contains several spectra with the same hash at "<<filename;
+			for(int i = 1;; ++i)
+			{
+				filename = constructFilename(spectrum, i);
+				if(filenames.count(filename) == 0)
+					break;
+			}
+		}
+		filenames.insert(filename);
+	}
 
 	if(!tar)
 	{
@@ -73,7 +94,8 @@ static bool save(const eis::Spectra& spectrum, const std::filesystem::path& outD
 }
 
 void threadFunc(EisDataset* dataset, size_t begin, size_t end, int testPercent, std::mutex* printMutex,
-				const std::filesystem::path outDir, std::mutex* saveMutex, mtar_t* traintar, mtar_t* testtar)
+				const std::filesystem::path outDir, std::mutex* saveMutex, std::set<std::string>* filenames,
+				mtar_t* traintar, mtar_t* testtar, bool eraseLabels)
 {
 	printMutex->lock();
 	Log(Log::INFO)<<"Thread doing "<<begin<<" to "<<end-1;
@@ -90,6 +112,12 @@ void threadFunc(EisDataset* dataset, size_t begin, size_t end, int testPercent, 
 			continue;
 		}
 
+		if(eraseLabels)
+		{
+			spectrum.setLabels(std::vector<float>());
+			spectrum.labelNames = std::vector<std::string>();
+		}
+
 		if(dataSize == 0)
 		{
 			dataSize = spectrum.data.size();
@@ -103,9 +131,9 @@ void threadFunc(EisDataset* dataset, size_t begin, size_t end, int testPercent, 
 		bool test = (testPercent > 0 && rd::rand(100) < testPercent);
 
 		if(test)
-			save(spectrum, outDir/"test", *saveMutex, testtar);
+			save(spectrum, outDir/"test", *saveMutex, *filenames, testtar);
 		else
-			save(spectrum, outDir/"train", *saveMutex, traintar);
+			save(spectrum, outDir/"train", *saveMutex, *filenames, traintar);
 
 		int percent = ((i-begin)*100)/(end-begin);
 		if(percent != loggedFor)
@@ -125,18 +153,21 @@ void exportDataset(Dataset& dataset, const Config& config, mtar_t* traintar, mta
 
 	std::mutex saveMutex;
 	std::mutex printMutex;
+	std::set<std::string> filenames;
 
 	std::vector<std::thread> threads;
 	size_t threadCount = std::thread::hardware_concurrency()*1.5;
 	size_t countPerThread = dataset.size()/threadCount;
 	size_t i = 0;
 
+	bool eraseLabels = config.selectLabels.empty() && config.selectLabelsSet;
+
 	Log(Log::INFO)<<"Spawing "<<threadCount<<" treads";
 	for(; i < threadCount-1; ++i)
 		threads.push_back(std::thread(threadFunc, new Dataset(dataset), i*countPerThread, (i+1)*countPerThread,
-									  config.testPercent, &printMutex, config.outDir, &saveMutex, traintar, testtar));
+									  config.testPercent, &printMutex, config.outDir, &saveMutex, &filenames, traintar, testtar, eraseLabels));
 	threads.push_back(std::thread(threadFunc, new Dataset(dataset), i*countPerThread, dataset.size(),
-									  config.testPercent, &printMutex, config.outDir, &saveMutex, traintar, testtar));
+									  config.testPercent, &printMutex, config.outDir, &saveMutex, &filenames, traintar, testtar, eraseLabels));
 
 	for(std::thread& thread : threads)
 		thread.join();
@@ -162,7 +193,7 @@ int main(int argc, char** argv)
 	}
 
 	std::vector<std::string> selectLabelKeys = config.selectLabels.empty() ? std::vector<std::string>() : tokenize(config.selectLabels, ',');
-	std::vector<std::string> extraInputKeys = config.extaInputs.empty() ? std::vector<std::string>() : tokenize(config.extaInputs, ',');;
+	std::vector<std::string> extraInputKeys = config.extaInputs.empty() ? std::vector<std::string>() : tokenize(config.extaInputs, ',');
 
 	mtar_t* traintar = nullptr;
 	mtar_t* testtar = nullptr;
@@ -241,6 +272,8 @@ int main(int argc, char** argv)
 		case DATASET_DIR:
 		{
 			EisDirDataset dataset(config.datasetPath, 100, selectLabelKeys, extraInputKeys, config.normalization);
+			size_t removed = dataset.removeLessThan(50);
+			Log(Log::INFO)<<"Removed "<<removed<<" spectra as there are not enough examples for this class";
 			exportDataset<EisDirDataset>(dataset, config, traintar, testtar);
 		}
 		break;

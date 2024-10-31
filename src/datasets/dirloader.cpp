@@ -7,7 +7,6 @@
 
 #include "model.h"
 #include "../log.h"
-#include "tokenize.h"
 
 #include "filterdata.h"
 
@@ -76,6 +75,41 @@ inputSize(inputSize), selectLabels(selectLabels), extraInputs(extraInputs), norm
 		Log(Log::WARN)<<"found few valid files in "<<directoryPath;
 }
 
+size_t EisDirDataset::removeLessThan(size_t examples)
+{
+	std::vector<size_t> classCounts(modelStrs.size(), 0);
+	for(FileNameStr file : fileNames)
+		++classCounts[file.classNum];
+
+	size_t removed = 0;
+
+	Log(Log::DEBUG)<<"Class counts for removal:";
+	for(size_t i =  0; i < classCounts.size(); ++i)
+		Log(Log::DEBUG)<<modelStrs[i]<<": "<<classCounts[i]<<(classCounts[i] < examples ? "(removed)" : "");
+	Log(Log::DEBUG, false)<<'\n';
+
+	for(size_t i = 0; i < fileNames.size(); ++i)
+	{
+		if(classCounts[fileNames[i].classNum] < examples)
+		{
+			fileNames.erase(fileNames.begin()+i);
+			--i;
+			++removed;
+		}
+	}
+
+	classCounts.assign(modelStrs.size(), 0);
+	for(FileNameStr file : fileNames)
+		++classCounts[file.classNum];
+
+	Log(Log::DEBUG)<<"Class counts after removal:";
+	for(size_t i =  0; i < classCounts.size(); ++i)
+		Log(Log::DEBUG)<<modelStrs[i]<<": "<<classCounts[i]<<(classCounts[i] < examples ? "(removed)" : "");
+	Log(Log::DEBUG, false)<<'\n';
+
+	return removed;
+}
+
 eis::Spectra EisDirDataset::getImpl(size_t index)
 {
 	if(fileNames.size() < index)
@@ -90,6 +124,9 @@ eis::Spectra EisDirDataset::getImpl(size_t index)
 	try
 	{
 		data = eis::Spectra::loadFromDisk(fileNames[index].path);
+		eis::purgeEisParamBrackets(data.model);
+		eis::Model::removeSeriesResitance(data.model);
+		assert(modelStrs[fileNames[index].classNum] == data.model);
 	}
 	catch(const eis::file_error& err)
 	{

@@ -36,4 +36,6 @@ public:
 
 	virtual size_t classForIndex(size_t index) override;
 	virtual std::string modelStringForClass(size_t classNum) override;
+
+	size_t removeLessThan(size_t examples);
 };
