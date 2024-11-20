@@ -94,6 +94,11 @@ size_t ParameterRegressionDataset::classForIndex(size_t index)
 	return 0;
 }
 
+void ParameterRegressionDataset::setOmegaRange(eis::Range range)
+{
+	omega = range;
+}
+
 std::string ParameterRegressionDataset::modelStringForClass(size_t classNum)
 {
 	std::vector<eis::Componant*> componants = model.getFlatComponants();

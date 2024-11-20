@@ -67,27 +67,33 @@ struct Config
 	std::string extaInputs;
 	bool extraInputsSet = false;
 	std::string selectLabels;
+	std::string range;
+	size_t frequencyCount = 100;
 	bool selectLabelsSet = false;
 	size_t desiredSize = 100000;
 	int testPercent = 0;
 	DatasetMode mode = DATASET_INVALID;
 	bool tar = false;
 	bool normalization = true;
+	bool noNegative = false;
 };
 
 static struct argp_option options[] =
 {
-  {"verbose",		'v', 0,			0,	"Show debug messages" },
-  {"quiet",			'q', 0,			0,	"Show only errors" },
-  {"dataset", 		'd', "[PATH]",	0,	"input dataset to use or the model string, in case of the regression purpose"},
-  {"type", 			't', "[TYPE]",	0,	"type of dataset to export valid types: " DATASET_LIST},
-  {"out-dir",		'o', "[PATH]",	0,	"directory where to export dataset"},
-  {"test-percent",	'p', "[NUMBER]",0,	"test dataset percentage"},
-  {"archive",		'a', 0,			0,	"save as a tar archive instead of a directory"},
-  {"size",			's', "[NUMBER]"	,0,	"size the dataset should have"},
+  {"verbose",			'v', 0,				0,	"Show debug messages" },
+  {"quiet",				'q', 0,				0,	"Show only errors" },
+  {"dataset", 			'd', "[PATH]",		0,	"input dataset to use or the model string, in case of the regression purpose"},
+  {"type", 				't', "[TYPE]",		0,	"type of dataset to export valid types: " DATASET_LIST},
+  {"out-dir",			'o', "[PATH]",		0,	"directory where to export dataset"},
+  {"test-percent",		'p', "[NUMBER]",	0,	"test dataset percentage"},
+  {"archive",			'a', 0,				0,	"save as a tar archive instead of a directory"},
+  {"size",				's', "[NUMBER]",	0,	"size the dataset should have"},
+  {"frequency-range",	'r', "[RANGE]",		0,	"Frequency range to simulate for simulated datasets"},
+  {"frequency-count",	'c', "[NUMBER]",	0,	"the number of frequencies to simmulate, default: 100"},
   {"select-labels",	'l', "[LABLE1,LABEL2,...]", OPTION_ARG_OPTIONAL,	"select thiese labels to appear in the output dataset (requires them to be present in the input)"},
   {"extra-inputs",	'x', "[INPUT1,INPUT2,...]", OPTION_ARG_OPTIONAL,	"select thiese labels to appear in the output dataset as extra inputs (requires them to be present in the input)"},
   {"no-normalization",	'n', 0,	0,	"turn off normalization on dataset types that ususally do this"},
+  {"no-negative",		'g', 0,	0,	"remove examples with negative labels from the dataset"},
   { 0 }
 };
 
@@ -137,6 +143,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			}
 			config->selectLabelsSet = true;
 			break;
+		case 'r':
+			config->range.assign(arg);
+			break;
 		case 'x':
 			if(arg)
 			{
@@ -148,6 +157,12 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case 'n':
 			config->normalization = false;
+			break;
+		case 'c':
+			config->frequencyCount = std::stoul(std::string(arg));
+			break;
+		case 'g':
+			config->noNegative = true;
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;

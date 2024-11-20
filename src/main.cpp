@@ -95,7 +95,7 @@ static bool save(const eis::Spectra& spectrum, const std::filesystem::path& outD
 
 void threadFunc(EisDataset* dataset, size_t begin, size_t end, int testPercent, std::mutex* printMutex,
 				const std::filesystem::path outDir, std::mutex* saveMutex, std::set<std::string>* filenames,
-				mtar_t* traintar, mtar_t* testtar, bool eraseLabels)
+				mtar_t* traintar, mtar_t* testtar, bool eraseLabels, bool noNegative)
 {
 	printMutex->lock();
 	Log(Log::INFO)<<"Thread doing "<<begin<<" to "<<end-1;
@@ -116,6 +116,14 @@ void threadFunc(EisDataset* dataset, size_t begin, size_t end, int testPercent, 
 		{
 			spectrum.setLabels(std::vector<float>());
 			spectrum.labelNames = std::vector<std::string>();
+		}
+		else if(noNegative)
+		{
+			for(double label : spectrum.labels)
+			{
+				if(label < 0.0)
+					continue;
+			}
 		}
 
 		if(dataSize == 0)
@@ -165,9 +173,9 @@ void exportDataset(Dataset& dataset, const Config& config, mtar_t* traintar, mta
 	Log(Log::INFO)<<"Spawing "<<threadCount<<" treads";
 	for(; i < threadCount-1; ++i)
 		threads.push_back(std::thread(threadFunc, new Dataset(dataset), i*countPerThread, (i+1)*countPerThread,
-									  config.testPercent, &printMutex, config.outDir, &saveMutex, &filenames, traintar, testtar, eraseLabels));
+									  config.testPercent, &printMutex, config.outDir, &saveMutex, &filenames, traintar, testtar, eraseLabels, config.noNegative));
 	threads.push_back(std::thread(threadFunc, new Dataset(dataset), i*countPerThread, dataset.size(),
-									  config.testPercent, &printMutex, config.outDir, &saveMutex, &filenames, traintar, testtar, eraseLabels));
+									  config.testPercent, &printMutex, config.outDir, &saveMutex, &filenames, traintar, testtar, eraseLabels, config.noNegative));
 
 	for(std::thread& thread : threads)
 		thread.join();
@@ -246,32 +254,40 @@ int main(int argc, char** argv)
 	{
 		case DATASET_GEN:
 		{
-			EisGeneratorDataset dataset(config.datasetPath, config.desiredSize, 100, 0);
+			EisGeneratorDataset dataset(config.datasetPath, config.desiredSize, config.frequencyCount, 0);
+			if(!config.range.empty())
+				dataset.setOmegaRange(eis::Range::fromString(config.range, config.frequencyCount));
 			exportDataset<EisGeneratorDataset>(dataset, config, traintar, testtar);
 		}
 		break;
 		case DATASET_GEN_NOISE:
 		{
-			EisGeneratorDatasetNoise dataset(config.datasetPath, config.desiredSize, 100);
+			EisGeneratorDatasetNoise dataset(config.datasetPath, config.desiredSize, config.frequencyCount);
+			if(!config.range.empty())
+				dataset.setOmegaRange(eis::Range::fromString(config.range, config.frequencyCount));
 			exportDataset<EisGeneratorDatasetNoise>(dataset, config, traintar, testtar);
 		}
 		break;
 		case DATASET_PASSFAIL:
 		{
-			EisGeneratorDataset gendataset(config.datasetPath, config.desiredSize, 100, 0);
+			EisGeneratorDataset gendataset(config.datasetPath, config.desiredSize, config.frequencyCount, 0);
+			if(!config.range.empty())
+				gendataset.setOmegaRange(eis::Range::fromString(config.range, config.frequencyCount));
 			PassFaillDataset dataset(&gendataset);
 			exportDataset<PassFaillDataset>(dataset, config, traintar, testtar);
 		}
 		break;
 		case DATASET_REGRESSION:
 		{
-			ParameterRegressionDataset dataset(config.datasetPath, config.desiredSize, 100, 0);
+			ParameterRegressionDataset dataset(config.datasetPath, config.desiredSize, config.frequencyCount, 0);
+			if(!config.range.empty())
+				dataset.setOmegaRange(eis::Range::fromString(config.range, config.frequencyCount));
 			exportDataset<ParameterRegressionDataset>(dataset, config, traintar, testtar);
 		}
 		break;
 		case DATASET_DIR:
 		{
-			EisDirDataset dataset(config.datasetPath, 100, selectLabelKeys, extraInputKeys, config.normalization);
+			EisDirDataset dataset(config.datasetPath, config.frequencyCount, selectLabelKeys, extraInputKeys, config.normalization);
 			size_t removed = dataset.removeLessThan(50);
 			Log(Log::INFO)<<"Removed "<<removed<<" spectra as there are not enough examples for this class";
 			exportDataset<EisDirDataset>(dataset, config, traintar, testtar);
@@ -279,7 +295,7 @@ int main(int argc, char** argv)
 		break;
 		case DATASET_TAR:
 		{
-			TarDataset dataset(config.datasetPath, 100, selectLabelKeys, extraInputKeys, config.normalization);
+			TarDataset dataset(config.datasetPath, config.frequencyCount, selectLabelKeys, extraInputKeys, config.normalization);
 			exportDataset<TarDataset>(dataset, config, traintar, testtar);
 		}
 		break;
