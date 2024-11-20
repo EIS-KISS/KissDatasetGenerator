@@ -119,11 +119,17 @@ void threadFunc(EisDataset* dataset, size_t begin, size_t end, int testPercent, 
 		}
 		else if(noNegative)
 		{
+			bool skip = false;
 			for(double label : spectrum.labels)
 			{
 				if(label < 0.0)
-					continue;
+				{
+					skip = true;
+					break;
+				}
 			}
+			if(skip)
+				continue;
 		}
 
 		if(dataSize == 0)
