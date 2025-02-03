@@ -36,6 +36,7 @@
 #include "spectra.h"
 #include "tokenize.h"
 #include "../log.h"
+#include "translators.h"
 
 static std::vector<std::string> readCircutsFromStream(std::istream& ss)
 {
@@ -231,7 +232,19 @@ eis::Spectra EisGeneratorDataset::getImpl(size_t index)
 	if(noise > 0)
 		eis::noise(data, noise, false);
 
-	eis::Spectra spectra(data, models[modelAndOffset.first].model->getModelStr(), typeid(this).name());
+
+	std::string modelStr;
+	if(!models[modelAndOffset.first].isSingleSweep)
+	{
+		models[modelAndOffset.first].model->getModelStr();
+	}
+	else
+	{
+		modelStr = models[modelAndOffset.first].singleModelParamString;
+		eis::purgeEisParamBrackets(modelStr);
+	}
+
+	eis::Spectra spectra(data, modelStr, typeid(this).name());
 
 	return spectra;
 }
