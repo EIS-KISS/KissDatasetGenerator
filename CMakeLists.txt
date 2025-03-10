@@ -9,19 +9,27 @@ set(SRC_FILES
 	src/tokenize.cpp
 	src/randomgen.cpp
 	src/hash.cpp
-	src/datasets/eisgendata.cpp
 	src/datasets/eisdataset.cpp
 	src/datasets/eisgendatanoise.cpp
 	src/datasets/parameterregressiondataset.cpp
 	src/datasets/dirloader.cpp
 	src/datasets/tarloader.cpp
+	src/ploting.cpp
 	src/microtar.c)
 
 find_package(PkgConfig REQUIRED)
+find_package(sciplot)
 pkg_search_module(DRT REQUIRED libeisdrt)
 pkg_search_module(EIS REQUIRED libeisgenerator)
 pkg_search_module(TYPE REQUIRED libkisstype)
 pkg_search_module(NOISE REQUIRED libeisnoise)
+
+if(NOT sciplot_FOUND)
+	message(WARNING "Sciplot not found, application will be unable to generate plots")
+else()
+	add_definitions(-DENABLE_PLOTTING)
+	message("Sciplot found, ploting enabled")
+endif()
 
 add_executable(${PROJECT_NAME} ${SRC_FILES})
 target_link_libraries( ${PROJECT_NAME} ${DRT_LIBRARIES} -lpthread ${EIS_LIBRARIES} ${NOISE_LIBRARIES} ${TYPE_LIBRARIES})

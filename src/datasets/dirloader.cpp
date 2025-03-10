@@ -30,9 +30,13 @@
 
 #include "filterdata.h"
 
-EisDirDataset::EisDirDataset(const std::string& dirName, int64_t inputSize, std::vector<std::string> selectLabels, std::vector<std::string> extraInputs, bool normalization):
-inputSize(inputSize), selectLabels(selectLabels), extraInputs(extraInputs), normalization(normalization)
+EisDirDataset::EisDirDataset(const std::vector<int>& options, const std::string& dirName, int64_t inputSize, std::vector<std::string> selectLabels, std::vector<std::string> extraInputs):
+inputSize(inputSize), selectLabels(selectLabels), extraInputs(extraInputs)
 {
+	assert(options.size() == getOptions().size());
+
+	normalization = options[0];
+
 	const std::filesystem::path directoryPath{dirName};
 	if(!std::filesystem::is_directory(dirName))
 	{
@@ -193,4 +197,21 @@ std::string EisDirDataset::modelStringForClass(size_t classNum)
 		return "invalid";
 	else
 		return *std::next(modelStrs.begin(), classNum);
+}
+
+std::string EisDirDataset::getOptionsHelp()
+{
+	std::stringstream ss;
+	ss<<"normalization: Normalize the spectra\n";
+	return ss.str();
+}
+
+std::vector<std::string> EisDirDataset::getOptions()
+{
+	return {"normalization"};
+}
+
+std::vector<int> EisDirDataset::getDefaultOptionValues()
+{
+	return {false};
 }

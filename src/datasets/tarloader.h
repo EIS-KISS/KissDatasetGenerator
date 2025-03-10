@@ -55,7 +55,7 @@ private:
 	eis::Spectra loadSpectraAtCurrentPos(size_t size);
 
 public:
-	explicit TarDataset(const std::filesystem::path& path, int64_t inputSize = 100, std::vector<std::string> selectLabels = {}, std::vector<std::string> extraInputs = {}, bool normalization = true);
+	explicit TarDataset(const std::vector<int>& options, const std::filesystem::path& path, int64_t inputSize = 100, std::vector<std::string> selectLabels = {}, std::vector<std::string> extraInputs = {});
 	TarDataset(const TarDataset& in);
 	TarDataset& operator=(const TarDataset& in);
 	~TarDataset();
@@ -64,4 +64,8 @@ public:
 
 	virtual size_t classForIndex(size_t index) override;
 	virtual std::string modelStringForClass(size_t classNum) override;
+
+	static std::string getOptionsHelp();
+	static std::vector<std::string> getOptions();
+	static std::vector<int> getDefaultOptionValues();
 };

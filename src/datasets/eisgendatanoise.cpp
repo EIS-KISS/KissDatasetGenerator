@@ -29,11 +29,8 @@
 #include <fstream>
 #include <algorithm>
 
-#include "log.h"
-#include "filterdata.h"
 #include "spectra.h"
 #include "tokenize.h"
-#include "filterdata.h"
 #include "../log.h"
 
 static std::vector<std::string> readCircutsFromStream(std::istream& ss)
@@ -51,22 +48,27 @@ static std::vector<std::string> readCircutsFromStream(std::istream& ss)
 	return out;
 }
 
-EisGeneratorDatasetNoise::EisGeneratorDatasetNoise(int64_t outputSize):
+EisGeneratorDataset::EisGeneratorDataset(const std::vector<int>& options, int64_t outputSize):
 omega(10, 1e6, outputSize/2, true)
 {
+	assert(options.size() == getOptions().size());
+	desiredSize = options[0];
+	normalize = !options[1];
+	useEisNoise = !options[2];
+	grid = options[3];
 }
 
-EisGeneratorDatasetNoise::EisGeneratorDatasetNoise(std::istream& is, int64_t desiredSize, int64_t outputSize):
-EisGeneratorDatasetNoise(outputSize)
+EisGeneratorDataset::EisGeneratorDataset(const std::vector<int>& options, std::istream& is, int64_t outputSize):
+EisGeneratorDataset(options, outputSize)
 {
 	std::vector<std::string> circuits = readCircutsFromStream(is);
 	if(circuits.empty())
 		throw eis::file_error("stream dosent contain any circuits");
-	addVectorOfModels(circuits, desiredSize);
+	addVectorOfModels(circuits);
 }
 
-EisGeneratorDatasetNoise::EisGeneratorDatasetNoise(const std::filesystem::path& path, int64_t desiredSize, int64_t outputSize):
-EisGeneratorDatasetNoise(outputSize)
+EisGeneratorDataset::EisGeneratorDataset(const std::vector<int>& options, const std::filesystem::path& path, int64_t outputSize):
+EisGeneratorDataset(options, outputSize)
 {
 	std::ifstream is(path, std::ios::in);
 	if(!is.is_open())
@@ -74,25 +76,26 @@ EisGeneratorDatasetNoise(outputSize)
 	std::vector<std::string> circuits = readCircutsFromStream(is);
 	if(circuits.empty())
 		throw eis::file_error("file dosent contain any circuits: " + path.string());
-	addVectorOfModels(circuits, desiredSize);
+	addVectorOfModels(circuits);
 }
 
-EisGeneratorDatasetNoise::EisGeneratorDatasetNoise(const char* cStr, size_t cStrLen, int64_t desiredSize,
+EisGeneratorDataset::EisGeneratorDataset(const std::vector<int>& options, const char* cStr, size_t cStrLen,
 										 int64_t outputSize):
-EisGeneratorDatasetNoise(outputSize)
+EisGeneratorDataset(options, outputSize)
 {
 	std::stringstream ss(std::string(cStr, cStrLen));
 	std::vector<std::string> circuits = readCircutsFromStream(ss);
 	if(circuits.empty())
 		throw std::runtime_error("array contains no circuits");
-	addVectorOfModels(circuits, desiredSize);
+	addVectorOfModels(circuits);
 }
 
-void EisGeneratorDatasetNoise::addVectorOfModels(const std::vector<std::string>& modelStrs, int64_t desiredSize)
+void EisGeneratorDataset::addVectorOfModels(const std::vector<std::string>& modelStrs)
 {
 	int64_t sizePerModel = (desiredSize/modelStrs.size())*3;
+	if(sizePerModel < 200)
+		sizePerModel = 200;
 
-	assert(sizePerModel > 3);
 	for(const std::string& modelStr : modelStrs)
 	{
 		std::string workModelStr = stripWhitespace(modelStr);
@@ -107,7 +110,7 @@ void EisGeneratorDatasetNoise::addVectorOfModels(const std::vector<std::string>&
 	Log(Log::INFO)<<__func__<<" dataset now has "<<size()<<" examples from "<<models.size()<<" models";
 }
 
-EisGeneratorDatasetNoise::ModelData* EisGeneratorDatasetNoise::findSameClass(std::string modelStr)
+EisGeneratorDataset::ModelData* EisGeneratorDataset::findSameClass(std::string modelStr)
 {
 	for(ModelData& model :models)
 	{
@@ -117,13 +120,13 @@ EisGeneratorDatasetNoise::ModelData* EisGeneratorDatasetNoise::findSameClass(std
 	return nullptr;
 }
 
-void EisGeneratorDatasetNoise::addModel(const eis::Model& model, size_t targetSize)
+void EisGeneratorDataset::addModel(const eis::Model& model, size_t targetSize)
 {
 	std::shared_ptr<eis::Model> modelPtr(new eis::Model(model));
 	addModel(modelPtr, targetSize);
 }
 
-void EisGeneratorDatasetNoise::addModel(std::shared_ptr<eis::Model> model, size_t targetSize)
+void EisGeneratorDataset::addModel(std::shared_ptr<eis::Model> model, size_t targetSize)
 {
 	ModelData modelData;
 	modelData.model = model;
@@ -166,7 +169,7 @@ void EisGeneratorDatasetNoise::addModel(std::shared_ptr<eis::Model> model, size_
 	models.push_back(modelData);
 }
 
-std::pair<size_t, size_t> EisGeneratorDatasetNoise::getModelAndOffsetForIndex(size_t index) const
+std::pair<size_t, size_t> EisGeneratorDataset::getModelAndOffsetForIndex(size_t index) const
 {
 	size_t model = 0;
 	for(; model < models.size(); ++model)
@@ -180,7 +183,7 @@ std::pair<size_t, size_t> EisGeneratorDatasetNoise::getModelAndOffsetForIndex(si
 	return std::pair<size_t, size_t>(model, index);
 }
 
-eis::Spectra EisGeneratorDatasetNoise::getImpl(size_t index)
+eis::Spectra EisGeneratorDataset::getImpl(size_t index)
 {
 	assert(index < size());
 
@@ -191,10 +194,11 @@ eis::Spectra EisGeneratorDatasetNoise::getImpl(size_t index)
 	std::vector<eis::DataPoint> data = model.model->executeSweep(omega, model.indecies[modelIndex]);
 	assert(data.size());
 
-	eis::normalize(data);
-	noise.add(data);
+	if(normalize)
+		eis::normalize(data);
+	if(useEisNoise)
+		noise.add(data);
 	eis::noise(data, 0.001, false);
-	filterData(data, omega.count*2, true);
 
 	if(data.size() != omega.count)
 	{
@@ -206,17 +210,17 @@ eis::Spectra EisGeneratorDatasetNoise::getImpl(size_t index)
 			return get(0);
 	}
 
-	eis::Spectra spectra(data, model.model->getModelStr(), typeid(this).name());
+	eis::Spectra spectra(data, model.model->getModelStrWithParam(model.indecies[modelIndex]), typeid(this).name());
 
 	return spectra;
 }
 
-size_t EisGeneratorDatasetNoise::frequencies()
+size_t EisGeneratorDataset::frequencies()
 {
 	return omega.count;
 }
 
-size_t EisGeneratorDatasetNoise::size() const
+size_t EisGeneratorDataset::size() const
 {
 	size_t size = 0;
 	for(size_t i = 0; i < models.size(); ++i)
@@ -224,18 +228,18 @@ size_t EisGeneratorDatasetNoise::size() const
 	return size;
 }
 
-size_t EisGeneratorDatasetNoise::classForIndex(size_t index)
+size_t EisGeneratorDataset::classForIndex(size_t index)
 {
 	std::pair<size_t, size_t> modelAndOffset = getModelAndOffsetForIndex(index);
 	return models[modelAndOffset.first].classNum;
 }
 
-EisGeneratorDatasetNoise* EisGeneratorDatasetNoise::getTestDataset()
+EisGeneratorDataset* EisGeneratorDataset::getTestDataset()
 {
 	return this;
 }
 
-std::string EisGeneratorDatasetNoise::modelStringForClass(size_t classNum)
+std::string EisGeneratorDataset::modelStringForClass(size_t classNum)
 {
 	for(ModelData model : models)
 	{
@@ -245,8 +249,27 @@ std::string EisGeneratorDatasetNoise::modelStringForClass(size_t classNum)
 	return "invalid";
 }
 
-void EisGeneratorDatasetNoise::setOmegaRange(eis::Range range)
+void EisGeneratorDataset::setOmegaRange(eis::Range range)
 {
 	omega = range;
 }
 
+std::string EisGeneratorDataset::getOptionsHelp()
+{
+	std::stringstream ss;
+	ss<<"size=[NUMMBER]:   the size the dataset should have\n";
+	ss<<"no-normalization: dont normalize the data\n";
+	ss<<"no-noise:         dont use libeisnoise to add noise\n";
+	ss<<"grid:             use a parameter grid instead of the eis::model::getRecommendedParamIndices heuristic\n";
+	return ss.str();
+}
+
+std::vector<std::string> EisGeneratorDataset::getOptions()
+{
+	return {"size", "no-normalization", "no-noise", "grid"};
+}
+
+std::vector<int> EisGeneratorDataset::getDefaultOptionValues()
+{
+	return{1000, 0, 0, 0};
+}

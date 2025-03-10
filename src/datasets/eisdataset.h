@@ -20,6 +20,7 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include <vector>
 #include <kisstype/spectra.h>
 
 class EisDataset
@@ -34,4 +35,8 @@ public:
 	virtual std::string modelStringForClass(size_t classNum) {return std::string("Unkown");}
 	virtual std::string getDescription() {return "";};
 	virtual ~EisDataset(){}
+
+	static std::string getOptionsHelp() {return "";}
+	static std::vector<std::string> getOptions() {return {};};
+	static std::vector<int> getDefaultOptionValues() {return {};};
 };

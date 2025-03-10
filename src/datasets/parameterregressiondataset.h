@@ -34,7 +34,6 @@ private:
 	eis::Model model;
 
 	eis::Range omega;
-	double noise;
 	size_t sweepCount;
 	size_t parameterCount;
 	bool drt;
@@ -44,7 +43,7 @@ private:
 	static fvalue max(const std::vector<eis::DataPoint>& data);
 
 public:
-	explicit ParameterRegressionDataset(const std::string& model, int64_t desiredSize, int64_t outputSize = 100, double noiseI = 0, bool drtI = false);
+	explicit ParameterRegressionDataset(const std::vector<int>& options, const std::string& model, int64_t outputSize = 100);
 	ParameterRegressionDataset(const ParameterRegressionDataset& in) = default;
 
 	void setOmegaRange(eis::Range range);
@@ -52,4 +51,8 @@ public:
 	virtual size_t classForIndex(size_t index) override;
 	virtual std::string modelStringForClass(size_t classNum) override;
 	virtual size_t size() const override;
+
+	static std::string getOptionsHelp();
+	static std::vector<std::string> getOptions();
+	static std::vector<int> getDefaultOptionValues();
 };

@@ -30,7 +30,7 @@
 
 #include "eisdataset.h"
 
-class EisGeneratorDatasetNoise :
+class EisGeneratorDataset :
 public EisDataset
 {
 	struct ModelData
@@ -50,28 +50,35 @@ private:
 
 	eis::Range omega;
 	EisNoise noise;
+	bool useEisNoise = true;
+	bool normalize = true;
+	bool grid = false;
+	int desiredSize;
 	size_t classCounter = 0;
 
 private:
 	std::pair<size_t, size_t> getModelAndOffsetForIndex(size_t index) const;
-	void addVectorOfModels(const std::vector<std::string>& modelStrs, int64_t desiredSize);
+	void addVectorOfModels(const std::vector<std::string>& modelStrs);
 
 	virtual eis::Spectra getImpl(size_t index) override;
 	ModelData* findSameClass(std::string modelStr);
 
 public:
-	explicit EisGeneratorDatasetNoise(int64_t outputSize);
-	explicit EisGeneratorDatasetNoise(const std::filesystem::path& path, int64_t desiredSize, int64_t outputSize);
-	explicit EisGeneratorDatasetNoise(std::istream& is, int64_t outputSize, int64_t desiredSize);
-	explicit EisGeneratorDatasetNoise(const char* cStr, size_t cStrLen, int64_t desiredSize, int64_t outputSize);
+	explicit EisGeneratorDataset(const std::vector<int>& options, int64_t outputSize);
+	explicit EisGeneratorDataset(const std::vector<int>& options, const std::filesystem::path& path, int64_t outputSize);
+	explicit EisGeneratorDataset(const std::vector<int>& options, std::istream& is, int64_t desiredSize);
+	explicit EisGeneratorDataset(const std::vector<int>& options, const char* cStr, size_t cStrLen, int64_t outputSize);
 
-	EisGeneratorDatasetNoise(const EisGeneratorDatasetNoise& in) = default;
+	EisGeneratorDataset(const EisGeneratorDataset& in) = default;
 	void addModel(const eis::Model& model, size_t targetExamples);
 	void addModel(std::shared_ptr<eis::Model> model, size_t targetExamples);
-	EisGeneratorDatasetNoise* getTestDataset();
+	EisGeneratorDataset* getTestDataset();
 	size_t frequencies();
 	void setOmegaRange(eis::Range range);
 
+	static std::string getOptionsHelp();
+	static std::vector<std::string> getOptions();
+	static std::vector<int> getDefaultOptionValues();
 	virtual size_t classForIndex(size_t index) override;
 	virtual std::string modelStringForClass(size_t classNum) override;
 	virtual size_t size() const override;

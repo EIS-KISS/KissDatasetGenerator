@@ -48,7 +48,7 @@ private:
 	virtual eis::Spectra getImpl(size_t index) override;
 
 public:
-	explicit EisDirDataset(const std::string& dirName, int64_t inputSize = 100, std::vector<std::string> selectLabels = {}, std::vector<std::string> extraInputs = {}, bool normalization = true);
+	explicit EisDirDataset(const std::vector<int>& options, const std::string& dirName, int64_t inputSize = 100, std::vector<std::string> selectLabels = {}, std::vector<std::string> extraInputs = {});
 	EisDirDataset(const EisDirDataset& in) = default;
 
 	virtual size_t size() const override;
@@ -56,5 +56,8 @@ public:
 	virtual size_t classForIndex(size_t index) override;
 	virtual std::string modelStringForClass(size_t classNum) override;
 
+	static std::string getOptionsHelp();
+	static std::vector<std::string> getOptions();
+	static std::vector<int> getDefaultOptionValues();
 	size_t removeLessThan(size_t examples);
 };

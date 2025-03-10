@@ -24,14 +24,19 @@
 #include <complex>
 #include <kisstype/type.h>
 #include <eisgenerator/basicmath.h>
-#include <limits>
 
 #include "parameterregressiondataset.h"
 #include "../log.h"
 
-ParameterRegressionDataset::ParameterRegressionDataset(const std::string& modelStr, int64_t desiredSize, int64_t outputSize, double noiseI, bool drtI):
-model(modelStr), omega(1, 10e6, drtI ? outputSize : outputSize/2, true), noise(noiseI), drt(drtI)
+ParameterRegressionDataset::ParameterRegressionDataset(const std::vector<int>& options, const std::string& modelStr, int64_t outputSize):
+model(modelStr)
 {
+	assert(options.size() == getOptions().size());
+
+	int desiredSize =  options[0];
+	drt = options[1];
+
+	omega = eis::Range(1, 10e6, drt ? outputSize : outputSize/2, true);
 	model.compile();
 	sweepCount = model.getRequiredStepsForSweeps();
 	model.setParamSweepCountClosestTotal(desiredSize);
@@ -139,4 +144,22 @@ std::string ParameterRegressionDataset::modelStringForClass(size_t classNum)
 		}
 	}
 	return model.getModelStr();
+}
+
+std::string ParameterRegressionDataset::getOptionsHelp()
+{
+	std::stringstream ss;
+	ss<<"size: the size the dataset should have\n";
+	ss<<"drt:  if set the spectra will be converted into a drt\n";
+	return ss.str();
+}
+
+std::vector<std::string> ParameterRegressionDataset::getOptions()
+{
+	return {"size", "drt"};
+}
+
+std::vector<int> ParameterRegressionDataset::getDefaultOptionValues()
+{
+	return {10000, false};
 }

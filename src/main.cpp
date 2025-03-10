@@ -18,6 +18,7 @@
 // along with KissDatasetGenerator.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+#include <cstdio>
 #include <filesystem>
 #include <eisgenerator/model.h>
 #include <eisgenerator/log.h>
@@ -35,7 +36,6 @@
 #include "options.h"
 #include "datasets/parameterregressiondataset.h"
 #include "datasets/eisdataset.h"
-#include "datasets/eisgendata.h"
 #include "datasets/passfaildataset.h"
 #include "datasets/dirloader.h"
 #include "datasets/tarloader.h"
@@ -43,6 +43,7 @@
 #include "microtar.h"
 #include "hash.h"
 #include "tokenize.h"
+#include "ploting.h"
 
 static bool checkDir(const std::filesystem::path& outDir)
 {
@@ -57,7 +58,7 @@ static bool checkDir(const std::filesystem::path& outDir)
 	return true;
 }
 
-static std::string constructFilename(const eis::Spectra& spectrum, int offset)
+static std::string constructFilename(const eis::Spectra& spectrum, int offset, const std::string& extension = ".csv")
 {
 	uint64_t hash = murmurHash64(spectrum.data.data(), spectrum.data.size()*sizeof(*spectrum.data.data()), 8371) + offset;
 	std::string model = spectrum.model;
@@ -65,11 +66,11 @@ static std::string constructFilename(const eis::Spectra& spectrum, int offset)
 	std::string filename(model);
 	filename.push_back('_');
 	filename.append(std::to_string(hash));
-	filename.append(".csv");
+	filename.append(extension);
 	return filename;
 }
 
-static bool save(const eis::Spectra& spectrum, const std::filesystem::path& outDir, std::mutex& saveMutex, std::set<std::string>& filenames, mtar_t* tar = nullptr)
+static bool save(const eis::Spectra& spectrum, const std::filesystem::path& outDir, std::mutex& saveMutex, std::set<std::string>& filenames, mtar_t* tar, bool saveImages)
 {
 	bool ret = true;
 	std::string filename = constructFilename(spectrum, 0);
@@ -94,6 +95,14 @@ static bool save(const eis::Spectra& spectrum, const std::filesystem::path& outD
 		try
 		{
 			spectrum.saveToDisk(outDir/filename);
+			if(saveImages)
+			{
+				std::filesystem::path imagePath = outDir/(tokenize(filename, '.')[0] + ".png");
+				auto[real, imag] = eis::eisToValarrays(spectrum.data);
+
+				if(!save2dPlot(imagePath, spectrum.model, "Re(z)", "Im(z)", real, imag))
+					Log(Log::WARN)<<"Could not save "<<imagePath;
+			}
 		}
 		catch(eis::file_error &err)
 		{
@@ -115,7 +124,7 @@ static bool save(const eis::Spectra& spectrum, const std::filesystem::path& outD
 
 void threadFunc(EisDataset* dataset, size_t begin, size_t end, int testPercent, std::mutex* printMutex,
 				const std::filesystem::path outDir, std::mutex* saveMutex, std::set<std::string>* filenames,
-				mtar_t* traintar, mtar_t* testtar, bool eraseLabels, bool noNegative)
+				mtar_t* traintar, mtar_t* testtar, bool eraseLabels, bool noNegative, bool saveImages, std::string overrideModel)
 {
 	printMutex->lock();
 	Log(Log::INFO)<<"Thread doing "<<begin<<" to "<<end-1;
@@ -131,6 +140,9 @@ void threadFunc(EisDataset* dataset, size_t begin, size_t end, int testPercent, 
 			Log(Log::WARN)<<"Skipping datapoint "<<i;
 			continue;
 		}
+
+		if(!overrideModel.empty())
+			spectrum.model = overrideModel;
 
 		if(eraseLabels)
 		{
@@ -165,9 +177,9 @@ void threadFunc(EisDataset* dataset, size_t begin, size_t end, int testPercent, 
 		bool test = (testPercent > 0 && rd::rand(100) < testPercent);
 
 		if(test)
-			save(spectrum, outDir/"test", *saveMutex, *filenames, testtar);
+			save(spectrum, outDir/"test", *saveMutex, *filenames, testtar, saveImages);
 		else
-			save(spectrum, outDir/"train", *saveMutex, *filenames, traintar);
+			save(spectrum, outDir/"train", *saveMutex, *filenames, traintar, saveImages);
 
 		int percent = ((i-begin)*100)/(end-begin);
 		if(percent != loggedFor)
@@ -199,12 +211,75 @@ void exportDataset(Dataset& dataset, const Config& config, mtar_t* traintar, mta
 	Log(Log::INFO)<<"Spawing "<<threadCount<<" treads";
 	for(; i < threadCount-1; ++i)
 		threads.push_back(std::thread(threadFunc, new Dataset(dataset), i*countPerThread, (i+1)*countPerThread,
-									  config.testPercent, &printMutex, config.outDir, &saveMutex, &filenames, traintar, testtar, eraseLabels, config.noNegative));
+									  config.testPercent, &printMutex, config.outDir, &saveMutex, &filenames,
+									  traintar, testtar, eraseLabels, config.noNegative, config.saveImages, config.overrideModel));
 	threads.push_back(std::thread(threadFunc, new Dataset(dataset), i*countPerThread, dataset.size(),
-									  config.testPercent, &printMutex, config.outDir, &saveMutex, &filenames, traintar, testtar, eraseLabels, config.noNegative));
+									  config.testPercent, &printMutex, config.outDir, &saveMutex, &filenames,
+									  traintar, testtar, eraseLabels, config.noNegative, config.saveImages, config.overrideModel));
 
 	for(std::thread& thread : threads)
 		thread.join();
+}
+
+std::pair<std::string, int> parseOption(std::string option)
+{
+	std::vector<std::string> tokens = tokenize(option, '=');
+	if(tokens.size() == 1)
+		return {option, true};
+	else
+		return {tokens[0], std::stoi(tokens[1])};
+}
+
+template<typename Dataset>
+bool parseOptions(std::string stroptions, std::vector<int>& options)
+{
+	std::vector<std::string> tokens = tokenize(stroptions, ',');
+	std::vector<std::pair<std::string, int>> candidates;
+	for(std::string token : tokens)
+		candidates.push_back(parseOption(token));
+
+	options = Dataset::getDefaultOptionValues();
+	std::vector<std::string> optionNames = Dataset::getOptions();
+
+	for(const std::pair<std::string, int>& candidate :candidates)
+	{
+		auto search = std::find(optionNames.begin(), optionNames.end(), candidate.first);
+		if(search == optionNames.end())
+		{
+			Log(Log::ERROR)<<"Unkown dataset option "<<candidate.first<<"\n\n Supported options for this dataset:\n"<<Dataset::getOptionsHelp();
+			return false;
+		}
+
+		size_t optionIndex = std::distance(search, optionNames.begin());
+		options[optionIndex] = candidate.second;
+	}
+	return true;
+}
+
+void printDatasetHelp(DatasetMode datasetMode)
+{
+	Log(Log::INFO)<<"Supported options for this dataset:";
+	switch(datasetMode)
+	{
+		case DATASET_GEN:
+			Log(Log::INFO)<<EisGeneratorDataset::getOptionsHelp();
+		break;
+		case DATASET_PASSFAIL:
+			Log(Log::INFO)<<"None";
+		break;
+		case DATASET_REGRESSION:
+			Log(Log::INFO)<<ParameterRegressionDataset::getOptionsHelp();
+		break;
+		case DATASET_DIR:
+			Log(Log::INFO)<<EisDirDataset::getOptionsHelp();
+		break;
+		case DATASET_TAR:
+			Log(Log::INFO)<<TarDataset::getOptionsHelp();
+		break;
+		default:
+			Log(Log::ERROR)<<"Not implemented";
+			break;
+	}
 }
 
 int main(int argc, char** argv)
@@ -214,15 +289,27 @@ int main(int argc, char** argv)
 	Config config;
 	argp_parse(&argp, argc, argv, 0, 0, &config);
 
+	if(config.mode == DATASET_INVALID)
+	{
+		Log(Log::ERROR)<<"A invalid dataset type was specified";
+		return 1;
+	}
+
+	if(config.printDatasetHelp)
+	{
+		printDatasetHelp(config.mode);
+		return 0;
+	}
+
 	if(config.datasetPath.empty())
 	{
 		Log(Log::ERROR)<<"A path to a dataset (option -d) must be provided";
 		return 1;
 	}
 
-	if(config.mode == DATASET_INVALID)
+	if(config.saveImages && config.tar)
 	{
-		Log(Log::ERROR)<<"A invalid dataset type was specified";
+		Log(Log::ERROR)<<"Saveing images to tar is not implemented";
 		return 1;
 	}
 
@@ -274,29 +361,25 @@ int main(int argc, char** argv)
 		}
 	}
 
+	std::vector<int> options;
+
 	Log(Log::INFO)<<"Exporting dataset of type "<<datasetModeToStr(config.mode);
 
 	switch(config.mode)
 	{
 		case DATASET_GEN:
 		{
-			EisGeneratorDataset dataset(config.datasetPath, config.desiredSize, config.frequencyCount, 0);
+			if(!parseOptions<EisGeneratorDataset>(config.dataOptions, options))
+				return 1;
+			EisGeneratorDataset dataset(options, config.datasetPath, config.frequencyCount);
 			if(!config.range.empty())
 				dataset.setOmegaRange(eis::Range::fromString(config.range, config.frequencyCount));
 			exportDataset<EisGeneratorDataset>(dataset, config, traintar, testtar);
 		}
 		break;
-		case DATASET_GEN_NOISE:
-		{
-			EisGeneratorDatasetNoise dataset(config.datasetPath, config.desiredSize, config.frequencyCount);
-			if(!config.range.empty())
-				dataset.setOmegaRange(eis::Range::fromString(config.range, config.frequencyCount));
-			exportDataset<EisGeneratorDatasetNoise>(dataset, config, traintar, testtar);
-		}
-		break;
 		case DATASET_PASSFAIL:
 		{
-			EisGeneratorDataset gendataset(config.datasetPath, config.desiredSize, config.frequencyCount, 0);
+			EisGeneratorDataset gendataset(EisGeneratorDataset::getDefaultOptionValues(), config.datasetPath, config.frequencyCount);
 			if(!config.range.empty())
 				gendataset.setOmegaRange(eis::Range::fromString(config.range, config.frequencyCount));
 			PassFaillDataset dataset(&gendataset);
@@ -305,7 +388,9 @@ int main(int argc, char** argv)
 		break;
 		case DATASET_REGRESSION:
 		{
-			ParameterRegressionDataset dataset(config.datasetPath, config.desiredSize, config.frequencyCount, 0);
+			if(!parseOptions<ParameterRegressionDataset>(config.dataOptions, options))
+				return 1;
+			ParameterRegressionDataset dataset(options, config.datasetPath, config.frequencyCount);
 			if(!config.range.empty())
 				dataset.setOmegaRange(eis::Range::fromString(config.range, config.frequencyCount));
 			exportDataset<ParameterRegressionDataset>(dataset, config, traintar, testtar);
@@ -313,7 +398,9 @@ int main(int argc, char** argv)
 		break;
 		case DATASET_DIR:
 		{
-			EisDirDataset dataset(config.datasetPath, config.frequencyCount, selectLabelKeys, extraInputKeys, config.normalization);
+			if(!parseOptions<EisDirDataset>(config.dataOptions, options))
+				return 1;
+			EisDirDataset dataset(options, config.datasetPath, config.frequencyCount, selectLabelKeys, extraInputKeys);
 			size_t removed = dataset.removeLessThan(50);
 			Log(Log::INFO)<<"Removed "<<removed<<" spectra as there are not enough examples for this class";
 			exportDataset<EisDirDataset>(dataset, config, traintar, testtar);
@@ -321,7 +408,9 @@ int main(int argc, char** argv)
 		break;
 		case DATASET_TAR:
 		{
-			TarDataset dataset(config.datasetPath, config.frequencyCount, selectLabelKeys, extraInputKeys, config.normalization);
+			if(!parseOptions<TarDataset>(config.dataOptions, options))
+				return 1;
+			TarDataset dataset(options, config.datasetPath, config.frequencyCount, selectLabelKeys, extraInputKeys);
 			exportDataset<TarDataset>(dataset, config, traintar, testtar);
 		}
 		break;

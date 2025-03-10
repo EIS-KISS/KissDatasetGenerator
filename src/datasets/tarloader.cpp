@@ -30,9 +30,13 @@
 
 #include "filterdata.h"
 
-TarDataset::TarDataset(const std::filesystem::path& path, int64_t inputSize, std::vector<std::string> selectLabels, std::vector<std::string> extraInputs, bool normalization):
-inputSize(inputSize), selectLabels(selectLabels), extraInputs(extraInputs),path(path), normalization(normalization)
+TarDataset::TarDataset(const std::vector<int>& options, const std::filesystem::path& path, int64_t inputSize, std::vector<std::string> selectLabels, std::vector<std::string> extraInputs):
+inputSize(inputSize), selectLabels(selectLabels), extraInputs(extraInputs),path(path)
 {
+	assert(options.size() == getOptions().size());
+
+	normalization = options[0];
+
 	int ret = mtar_open(&tar, path.c_str(), "r");
 	if(ret)
 	{
@@ -189,4 +193,21 @@ std::string TarDataset::modelStringForClass(size_t classNum)
 		return "invalid";
 	else
 		return *std::next(modelStrs.begin(), classNum);
+}
+
+std::string TarDataset::getOptionsHelp()
+{
+	std::stringstream ss;
+	ss<<"normalization: Normalize the spectra\n";
+	return ss.str();
+}
+
+std::vector<std::string> TarDataset::getOptions()
+{
+	return {"normalization"};
+}
+
+std::vector<int> TarDataset::getDefaultOptionValues()
+{
+	return {false};
 }
