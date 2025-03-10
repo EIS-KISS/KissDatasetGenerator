@@ -131,26 +131,38 @@ void EisGeneratorDataset::addModel(std::shared_ptr<eis::Model> model, size_t tar
 	ModelData modelData;
 	modelData.model = model;
 
-	Log(Log::INFO)<<__func__<<" adding model "<<model->getModelStr()<<" attempting to give "<<targetSize<<" examples";
+	Log(Log::INFO)<<__func__<<" adding model "<<model->getModelStr();
 
 	size_t steps = model->getRequiredStepsForSweeps();
-	const std::string modelStr = model->getModelStr();
 
-	if(steps == 1)
+	if(!grid)
 	{
-		modelData.indecies = {0};
+		Log(Log::INFO)<<"Attempting to give "<<targetSize<<" examples";
+		if(steps == 1)
+		{
+			modelData.indecies = {0};
+		}
+		else
+		{
+			model->compile();
+			modelData.indecies = model->getRecommendedParamIndices(omega, 0.01, true);
+		}
+		modelData.totalCount = targetSize;
+
+		if(modelData.indecies.empty())
+		{
+			modelData.indecies = {0};
+			modelData.totalCount = std::min(static_cast<size_t>(1000), targetSize);
+		}
+		Log(Log::INFO)<<__func__<<" found "<<modelData.indecies.size()<<" interesting spectra for model "<<model->getModelStr();
 	}
 	else
 	{
-		model->compile();
-		modelData.indecies = model->getRecommendedParamIndices(omega, 0.01, true);
-	}
-	modelData.totalCount = targetSize;
-
-	if(modelData.indecies.empty())
-	{
-		modelData.indecies = {0};
-		modelData.totalCount = std::min(static_cast<size_t>(1000), targetSize);
+		modelData.indecies.clear();
+		modelData.indecies.reserve(steps);
+		for(size_t i = 0; i < steps; ++i)
+			modelData.indecies.push_back(i);
+		modelData.totalCount = steps;
 	}
 
 	ModelData* candidate = findSameClass(model->getModelStr());
@@ -163,8 +175,6 @@ void EisGeneratorDataset::addModel(std::shared_ptr<eis::Model> model, size_t tar
 		modelData.classNum = classCounter;
 		++classCounter;
 	}
-
-	Log(Log::INFO)<<__func__<<" found "<<modelData.indecies.size()<<" interesting spectra for model "<<model->getModelStr();
 
 	models.push_back(modelData);
 }

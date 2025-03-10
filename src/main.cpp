@@ -24,12 +24,14 @@
 #include <eisgenerator/log.h>
 #include <eisgenerator/translators.h>
 #include <kisstype/type.h>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <mutex>
 #include <cassert>
 #include <vector>
 #include <set>
+#include <fstream>
 
 #include "datasets/eisgendatanoise.h"
 #include "log.h"
@@ -246,11 +248,11 @@ bool parseOptions(std::string stroptions, std::vector<int>& options)
 		auto search = std::find(optionNames.begin(), optionNames.end(), candidate.first);
 		if(search == optionNames.end())
 		{
-			Log(Log::ERROR)<<"Unkown dataset option "<<candidate.first<<"\n\n Supported options for this dataset:\n"<<Dataset::getOptionsHelp();
+			Log(Log::ERROR)<<"Unkown dataset option "<<candidate.first<<"\n\nSupported options for this dataset:\n"<<Dataset::getOptionsHelp();
 			return false;
 		}
 
-		size_t optionIndex = std::distance(search, optionNames.begin());
+		size_t optionIndex = std::distance(optionNames.begin(), search);
 		options[optionIndex] = candidate.second;
 	}
 	return true;
@@ -280,6 +282,18 @@ void printDatasetHelp(DatasetMode datasetMode)
 			Log(Log::ERROR)<<"Not implemented";
 			break;
 	}
+}
+
+std::string getMetadata(const Config& config, size_t datasetSize, const std::string& role = "unkown")
+{
+	std::stringstream ss;
+	ss<<"{\n";
+	ss<<"\t\"DatasetType\" : \""<<datasetModeToStr(config.mode)<<"\",\n";
+	ss<<"\t\"DatasetOptions\" : \""<<config.dataOptions<<"\",\n";
+	ss<<"\t\"DatasetSize\" : "<<datasetSize<<",\n";
+	ss<<"\t\"DatasetRole\" : \""<<role<<"\"\n";
+	ss<<"}\n";
+	return ss.str();
 }
 
 int main(int argc, char** argv)
@@ -365,6 +379,8 @@ int main(int argc, char** argv)
 
 	Log(Log::INFO)<<"Exporting dataset of type "<<datasetModeToStr(config.mode);
 
+	size_t datasetSize = 0;
+
 	switch(config.mode)
 	{
 		case DATASET_GEN:
@@ -375,6 +391,7 @@ int main(int argc, char** argv)
 			if(!config.range.empty())
 				dataset.setOmegaRange(eis::Range::fromString(config.range, config.frequencyCount));
 			exportDataset<EisGeneratorDataset>(dataset, config, traintar, testtar);
+			datasetSize = dataset.size();
 		}
 		break;
 		case DATASET_PASSFAIL:
@@ -384,6 +401,7 @@ int main(int argc, char** argv)
 				gendataset.setOmegaRange(eis::Range::fromString(config.range, config.frequencyCount));
 			PassFaillDataset dataset(&gendataset);
 			exportDataset<PassFaillDataset>(dataset, config, traintar, testtar);
+			datasetSize = dataset.size();
 		}
 		break;
 		case DATASET_REGRESSION:
@@ -394,6 +412,7 @@ int main(int argc, char** argv)
 			if(!config.range.empty())
 				dataset.setOmegaRange(eis::Range::fromString(config.range, config.frequencyCount));
 			exportDataset<ParameterRegressionDataset>(dataset, config, traintar, testtar);
+			datasetSize = dataset.size();
 		}
 		break;
 		case DATASET_DIR:
@@ -404,6 +423,7 @@ int main(int argc, char** argv)
 			size_t removed = dataset.removeLessThan(50);
 			Log(Log::INFO)<<"Removed "<<removed<<" spectra as there are not enough examples for this class";
 			exportDataset<EisDirDataset>(dataset, config, traintar, testtar);
+			datasetSize = dataset.size();
 		}
 		break;
 		case DATASET_TAR:
@@ -412,6 +432,7 @@ int main(int argc, char** argv)
 				return 1;
 			TarDataset dataset(options, config.datasetPath, config.frequencyCount, selectLabelKeys, extraInputKeys);
 			exportDataset<TarDataset>(dataset, config, traintar, testtar);
+			datasetSize = dataset.size();
 		}
 		break;
 		default:
@@ -421,14 +442,52 @@ int main(int argc, char** argv)
 
 	if(traintar)
 	{
+		std::string metastr = getMetadata(config, datasetSize, "train");
+		mtar_write_file_header(traintar, "meta.json", metastr.size());
+		mtar_write_data(traintar, metastr.c_str(), metastr.size());
 		mtar_finalize(traintar);
 		delete traintar;
 	}
 
 	if(testtar)
 	{
+		std::string metastr = getMetadata(config, datasetSize, "test");
+		mtar_write_file_header(testtar, "meta.json", metastr.size());
+		mtar_write_data(testtar, metastr.c_str(), metastr.size());
 		mtar_finalize(testtar);
 		delete testtar;
+	}
+
+	if(!config.tar)
+	{
+		{
+			std::string metastr = getMetadata(config, datasetSize, "train");
+
+			std::filesystem::path metaPath = config.outDir/"train"/"meta.json";
+			std::ofstream file(metaPath);
+			if(!file.is_open())
+			{
+				Log(Log::ERROR)<<"Could not open "<<metaPath<<" for writeing";
+				return 1;
+			}
+			file<<metastr;
+			file.close();
+		}
+
+		if(config.testPercent > 0)
+		{
+			std::string metastr = getMetadata(config, datasetSize, "test");
+
+			std::filesystem::path metaPath = config.outDir/"test"/"meta.json";
+			std::ofstream file(metaPath);
+			if(!file.is_open())
+			{
+				Log(Log::ERROR)<<"Could not open "<<metaPath<<" for writeing";
+				return 1;
+			}
+			file<<metastr;
+			file.close();
+		}
 	}
 
 	return 0;
